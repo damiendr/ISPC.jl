@@ -1,3 +1,4 @@
+# ISPC code generation.
 
 const ispc_types = Dict(
     Void => "void",

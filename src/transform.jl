@@ -1,31 +1,4 @@
-
-function print_lambda(expr)
-    @assert expr.head == :lambda
-    arg_symbols = expr.args[1]
-    local_vars = expr.args[2][1]
-    env_vars = expr.args[2][2]
-    gen_syms = expr.args[2][3]
-    param_symbols = expr.args[2][4]
-    tree = expr.args[3]
-    
-    println("Lambda function:")
-    println("\t arguments: $arg_symbols")
-    println("\t local variables: ")
-    println(join(map(o -> "\t\t$((o...,))", local_vars), "\n"))
-    println("\t closure variables: ")
-    println(join(map(o -> "\t\t$((o...,))", env_vars), "\n"))
-    println("\t SSA types: $gen_syms")
-    println("\t parameters: $param_symbols")
-    println(strip_box(strip_lineno(tree)))
-end
-
-"""
-Returns a typed AST for function `f`.
-"""
-function typed_ast(f::Function, argtype::Type{Tuple})
-    (ast, ret_type) = Core.Inference.typeinf(f.code, argtype, f.env)
-    ast_typed = ccall(:jl_uncompress_ast, Any, (Any,Any), f.code, ast)
-end
+# Transformations of Julia ASTs containing ISPC fragments.
 
 """
 Removes every `LineNumberNode` in the AST (eg. for clearer output).
@@ -34,10 +7,12 @@ function strip_lineno(obj)
     if isa(obj, Expr)
         args = map(strip_lineno, obj.args)
         filter!((o) -> !isa(o, LineNumberNode), args)
+        filter!((o) -> !(isa(o, Expr) && (o.head == :line)), args)
         return Expr(obj.head, args...)
     end
     return obj
 end
+
 
 """
 Replaces all calls to `Base.box()` with the unboxed value.
@@ -56,6 +31,38 @@ function strip_box(obj)
     end
     return obj
 end
+
+
+"""
+Calls `func()` on every node in `expr`.
+"""
+function walk(func, expr)
+    func(expr)
+    if isa(expr, Expr)
+        func(expr.head)
+        for o in expr.args
+            walk(func, o)
+        end
+    end
+end
+
+
+"""
+Traverses `expr` and replaces nodes according to the
+substitutions in dict `subst`.
+""" 
+function substitute(expr, subst)
+    if haskey(subst, expr)
+        return subst[expr]
+    end
+    if isa(expr, Expr)
+        head = substitute(expr.head, subst)
+        args = [substitute(a, subst) for a in expr.args]
+        return Expr(head, args...)
+    end
+    return expr
+end
+
 
 """
 Returns the jump target if `stmt` is a branch, `nothing` otherwise.
@@ -89,6 +96,7 @@ function replace_labels(expr, new_labels)
     return expr
 end
 
+
 """
 Replaces jumps to labels with jumps to statement indices (aka line numbers or
 program counters) and removes all `LabelNodes` from the AST. This transform
@@ -107,6 +115,7 @@ function labels_to_lines(block)
     newblock = Expr(block.head, program...)
     replace_labels(newblock, labels)
 end
+
 
 """
 Adds explicit labels for jumps to line/statement numbers. If the AST had been
@@ -132,29 +141,6 @@ function lines_to_labels(statements)
     program
 end
 
-
-"""
-Finds the ranges of statements that correspond to ISPC programs.
-"""
-function ispc_ranges(statements)
-    ranges = []
-    cur_id = nothing
-    start = 0
-    for (i, stmt) in enumerate(statements)
-        if isa(stmt, Expr) && stmt.head == :meta
-            if stmt.args[1] == :ispc
-                if cur_id == nothing
-                    cur_id = stmt.args[2]
-                    start = i
-                elseif cur_id == stmt.args[2]
-                    cur_id = nothing
-                    push!(ranges, start:i)
-                end
-            end
-        end
-    end
-    return ranges
-end
 
 """
 Raises the goto branches found in lowered AST to if/while constructs.
@@ -217,15 +203,10 @@ function raise_ast(statements, range)
     Expr(:block, program...)
 end
 
-function walk(func, expr)
-    func(expr)
-    if isa(expr, Expr)
-        for o in expr.args
-            walk(func, o)
-        end
-    end
-end
 
+"""
+Finds the symbols in `statements` that are defined outside of `range`.
+"""
 function extract_params(statements, range)
     decls = Set()
     for stmt in statements[range]
@@ -246,50 +227,95 @@ function extract_params(statements, range)
             end
         end
     end
-    [symbols...] # we need the ordering to be consistent.
+    [symbols...] # we need the ordering to be consistent from now on.
 end
 
 
-function gen_ispc_function!(dest, params, ast)
-    id = length(dest)
+"""
+Finds the ranges of statements that correspond to ISPC fragments.
+"""
+function ispc_ranges(statements)
+    ranges = []
+    cur_id = nothing
+    start = 0
+    for (i, stmt) in enumerate(statements)
+        if isa(stmt, Expr) && stmt.head == :meta
+            if stmt.args[1] == :ispc
+                identifier = stmt.args[2]
+                if cur_id == nothing && identifier != :coherent
+                    # opening tag
+                    cur_id = identifier
+                    start = i
+                elseif cur_id == identifier
+                    # closing tag
+                    cur_id = nothing
+                    push!(ranges, (start:i, identifier))
+                end
+            end
+        end
+    end
+    return ranges
+end
+
+
+@noinline function ispc_call(sym, args...)
+    println("Calling $sym$args")
+    nothing
+end
+
+
+"""
+Registers a new ISPC fragment.
+"""
+function add_ispc_function!(funcs, identifier, params, ast)
+    id = length(funcs)
     func_name = Symbol("ispc_func_$id")
     func_args = [sym for (sym, typ) in params]
-    push!(dest, (func_name, params, ast))
-    return Expr(:call, func_name, func_args...)
+    func_call = Expr(:call, :(ISPC.ispc_call), QuoteNode(func_name), func_args...)
+    funcs[identifier] = (func_call, params, ast)
 end
 
 
-function extract_ispc(block)
+"""
+Extracts ISPC fragments in `body` and return a dict of ISPC functions.
+"""
+function extract_ispc(body)
     # Simplify jump analysis by replacing labels with line numbers:
-    block = labels_to_lines(block)
+    statements = labels_to_lines(body).args
 
     # Extract all top-level spans of ISPC code and replace them with
     # calls to generated ISPC functions:
-    statements = block.args
-    new_statements = copy(statements)
-    functions = []
-    for range in ispc_ranges(statements)
+    functions = Dict()
+    for (range, identifier) in ispc_ranges(statements)
+        # Recover a structured control flow:
         ast = raise_ast(statements, range)
-        ast = strip_box(strip_lineno(ast))
+        # Get rid of the nodes that we won't need for ISPC generation:
+        ast = strip_box(strip_lineno(ast)) # yield a much cleaner AST
+        # Find out which outer variables are used within that fragment,
+        # they will become arguments to the ISPC function:
         params = extract_params(statements, range)
-        call = gen_ispc_function!(functions, params, ast)
-        new_statements[range.start] = call
-        new_statements[range.start+1:range.stop] = nothing
+        # Turn the fragment into an ISPC function:
+        add_ispc_function!(functions, identifier, params, ast)
     end
-
-    # Turn the AST back into a form that Julia can handle:
-    new_statements = lines_to_labels(new_statements)
-    filter!(o -> o != nothing, new_statements)
-    new_block = Expr(block.head, new_statements...)
-    new_block, functions
+    functions
 end
 
-
-
-function process_ast(func, argtypes)
-    typed = code_typed(func, argtypes)
-    func_code = typed[1].args[3]
-    block = strip_box(strip_lineno(func_code))
-    dontgoto(block.args)
+"""
+Replaces ISPC fragments in `body` with calls to the corresponding
+ISPC function in `functions`.
+"""
+function replace_calls(body, functions)
+    if isa(body, Expr)
+        statements = copy(body.args)
+        for (range, identifier) in ispc_ranges(body.args)
+            func_call = functions[identifier][1]
+            statements[range] = nothing
+            statements[range.start] = func_call
+        end
+        filter!(o -> o != nothing, statements)
+        return Expr(body.head, [replace_calls(o, functions) for o in statements]...)
+    else
+        return body
+    end
 end
 
