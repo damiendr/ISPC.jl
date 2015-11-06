@@ -33,36 +33,6 @@ function strip_box(obj)
 end
 
 
-"""
-Calls `func()` on every node in `expr`.
-"""
-function walk(func, expr)
-    func(expr)
-    if isa(expr, Expr)
-        func(expr.head)
-        for o in expr.args
-            walk(func, o)
-        end
-    end
-end
-
-
-"""
-Traverses `expr` and replaces nodes according to the
-substitutions in dict `subst`.
-""" 
-function substitute(expr, subst)
-    if haskey(subst, expr)
-        return subst[expr]
-    end
-    if isa(expr, Expr)
-        head = substitute(expr.head, subst)
-        args = [substitute(a, subst) for a in expr.args]
-        return Expr(head, args...)
-    end
-    return expr
-end
-
 
 """
 Returns the jump target if `stmt` is a branch, `nothing` otherwise.
@@ -102,18 +72,18 @@ Replaces jumps to labels with jumps to statement indices (aka line numbers or
 program counters) and removes all `LabelNodes` from the AST. This transform
 makes it easier to analyse branching patterns.
 """
-function labels_to_lines(block)
+function labels_to_lines(statements)
     labels = Dict()
     program = []
-    for stmt in block.args
+    for stmt in statements
         if isa(stmt, LabelNode)
             labels[stmt.label] = length(program) + 1
         else
             push!(program, stmt)
         end
     end
-    newblock = Expr(block.head, program...)
-    replace_labels(newblock, labels)
+    newblock = Expr(:block, program...)
+    replace_labels(newblock, labels).args
 end
 
 
@@ -145,7 +115,7 @@ end
 """
 Raises the goto branches found in lowered AST to if/while constructs.
 """
-function raise_ast(statements, range)
+function raise_ast(statements, range=1:length(statements))
     # In general it might seem very hard to transform gotos back to structured
     # control statements, but we're not dealing with that general problem here:
     # the only gotos in the expression tree are those that were introduced by
@@ -204,118 +174,62 @@ function raise_ast(statements, range)
 end
 
 
-"""
-Finds the symbols in `statements` that are defined outside of `range`.
-"""
-function extract_params(statements, range)
-    decls = Set()
-    for stmt in statements[range]
-        walk(stmt) do o
-            if isa(o, Expr) && o.head == :(=)
-                push!(decls, o.args[1])
-            end
-        end
-    end
-
-    symbols = Set()
-    for stmt in statements[range]
-        walk(stmt) do o
-            if isa(o, SymbolNode)
-                if !(o.name in decls)
-                    push!(symbols, (o.name, o.typ))
-                end
-            end
-        end
-    end
-    [symbols...] # we need the ordering to be consistent from now on.
-end
-
-
-"""
-Finds the ranges of statements that correspond to ISPC fragments.
-"""
-function ispc_ranges(statements)
-    ranges = []
-    cur_id = nothing
-    start = 0
-    for (i, stmt) in enumerate(statements)
-        if isa(stmt, Expr) && stmt.head == :meta
-            if stmt.args[1] == :ispc
-                identifier = stmt.args[2]
-                if cur_id == nothing && identifier != :coherent
-                    # opening tag
-                    cur_id = identifier
-                    start = i
-                elseif cur_id == identifier
-                    # closing tag
-                    cur_id = nothing
-                    push!(ranges, (start:i, identifier))
-                end
-            end
-        end
-    end
-    return ranges
-end
-
-
-@noinline function ispc_call(sym, args...)
-    println("Calling $sym$args")
-    nothing
-end
-
-
-"""
-Registers a new ISPC fragment.
-"""
-function add_ispc_function!(funcs, identifier, params, ast)
-    id = length(funcs)
-    func_name = Symbol("ispc_func_$id")
-    func_args = [sym for (sym, typ) in params]
-    func_call = Expr(:call, :(ISPC.ispc_call), QuoteNode(func_name), func_args...)
-    funcs[identifier] = (func_call, params, ast)
-end
-
-
-"""
-Extracts ISPC fragments in `body` and return a dict of ISPC functions.
-"""
-function extract_ispc(body)
-    # Simplify jump analysis by replacing labels with line numbers:
-    statements = labels_to_lines(body).args
-
-    # Extract all top-level spans of ISPC code and replace them with
-    # calls to generated ISPC functions:
-    functions = Dict()
+function meta_to_trees(expr::Expr)
+    branches = []
+    statements = expr.args
     for (range, identifier) in ispc_ranges(statements)
-        # Recover a structured control flow:
-        ast = raise_ast(statements, range)
-        # Get rid of the nodes that we won't need for ISPC generation:
-        ast = strip_box(strip_lineno(ast)) # yield a much cleaner AST
-        # Find out which outer variables are used within that fragment,
-        # they will become arguments to the ISPC function:
-        params = extract_params(statements, range)
-        # Turn the fragment into an ISPC function:
-        add_ispc_function!(functions, identifier, params, ast)
+        if identifier == nothing
+            append!(branches, statements[range])
+        else
+            meta = statements[range.start]
+            @assert meta.head == :meta
+            meta_op = meta.args[3]
+            meta_args = (meta.args[4:end]...)
+#            println("$meta $meta_op, $meta_args")
+            body = statements[(range.start+1):(range.stop-1)]
+            tree = meta_to_trees(Expr(:block, body...))
+            branch_expr = Expr(meta_op, meta_args..., tree)
+            push!(branches, branch_expr)
+        end
     end
-    functions
+    Expr(expr.head, branches...)
+end
+    
+
+collect_foreach_indices(expr::Any) = expr
+function collect_foreach_indices(expr::Expr)
+    args = expr.args
+    if expr.head == :foreach
+        iters = []
+        arrays, block = args
+        block = collect_foreach_indices(block)
+        statements = block.args
+        filter!(statements) do expr
+            if expr.head == :(=)
+                lhs, rhs = expr.args
+                if isa(rhs, Expr) && rhs.head == :call
+                    if rhs.args[1] == GlobalRef(ISPC, :foreachindex)
+                        push!(iters, rhs.args[2] => lhs)
+                        return false
+                    end
+                end
+            end
+            true
+        end
+        return Expr(:foreach, iters, Expr(:block, statements...))
+    end
+    args = [collect_foreach_indices(arg) for arg in args]
+    Expr(expr.head, args...)
 end
 
-"""
-Replaces ISPC fragments in `body` with calls to the corresponding
-ISPC function in `functions`.
-"""
-function replace_calls(body, functions)
-    if isa(body, Expr)
-        statements = copy(body.args)
-        for (range, identifier) in ispc_ranges(body.args)
-            func_call = functions[identifier][1]
-            statements[range] = nothing
-            statements[range.start] = func_call
-        end
-        filter!(o -> o != nothing, statements)
-        return Expr(body.head, [replace_calls(o, functions) for o in statements]...)
-    else
-        return body
-    end
+
+function resolve_topnodes(ast::Expr)
+    # We are likely to encounter two types of getfield calls:
+    # call(TopNode(getfield), GlobalRef, QuoteNode):
+    #       accesses a function in a module
+    # call(TopNode(getfield), GenSym, QuoteNode):
+    #       accesses a field in a local object
+    expr
 end
+
 

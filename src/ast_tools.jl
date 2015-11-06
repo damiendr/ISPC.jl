@@ -29,3 +29,64 @@ function typed_ast(f::Function, argtype::Type{Tuple})
     (ast, ret_type) = Core.Inference.typeinf(f.code, argtype, f.env)
     ast_typed = ccall(:jl_uncompress_ast, Any, (Any,Any), f.code, ast)
 end
+
+
+"""
+Calls `func()` on every node in `expr`.
+"""
+function walk(func, expr)
+    func(expr)
+    if isa(expr, Expr)
+        func(expr.head)
+        for o in expr.args
+            walk(func, o)
+        end
+    end
+end
+
+
+"""
+Traverses `expr` and replaces nodes according to the
+substitutions in dict/function `subst`.
+""" 
+
+function substitute(obj::Any, subst::Dict)
+    get(subst, obj, obj)
+end
+
+function substitute(expr::Expr, subst::Dict)
+    if haskey(subst, expr)
+        return subst[expr]
+    else
+        head = substitute(expr.head, subst)
+        args = [substitute(a, subst) for a in expr.args]
+        return Expr(head, args...)
+    end
+end
+
+function substitute(obj::Any, subst::Function)
+    result = subst(obj)
+    if result != nothing
+        return result
+    else
+        return obj
+    end
+end
+
+function substitute(expr::Expr, subst::Function)
+    result = subst(expr)
+    if result != nothing
+        return result
+    else
+        head = substitute(expr.head, subst)
+        args = [substitute(a, subst) for a in expr.args]
+        return Expr(head, args...)
+    end
+end
+
+function sexpr(obj)
+    io = IOBuffer()
+    Base.Meta.show_sexpr(io, obj)
+    takebuf_string(io)
+end
+

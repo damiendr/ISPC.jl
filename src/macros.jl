@@ -1,5 +1,15 @@
 # Macros used to express ISPC concepts in Julia code.
 
+function ispc_esc(expr)
+    # All ISPC entry points are escaped as @fastmath.
+    # This is to prevent Julia from inserting a number of runtime
+    # checks into the lowered AST that are either untranslateable
+    # or unnecessary because they'll be done by the ISPC compiler.
+    # Note: this does NOT imply that the ISPC compiler itself will
+    # use --fastmath.
+    return Base.FastMath.make_fastmath(esc(expr))
+end
+
 """
 The ISPC `foreach` construct:
 
@@ -15,7 +25,7 @@ macro foreach(func_expr, array_expr...)
     signature, block = func_expr.args
     # Turn the lambda into a let block:
     foreach_id = gensym(:foreach)
-    code = esc(quote
+    code = ispc_esc(quote
         $(Expr(:meta, :ispc, foreach_id, :foreach, array_expr))
         let $([:($a = ISPC.foreachindex($s)) for (s, a) in zip(array_expr, signature.args)]...)
             $block
@@ -41,7 +51,7 @@ end
 """
 macro unmasked(block)
     unmasked_id = gensym(:unmasked)
-    esc(quote
+    ispc_esc(quote
         $(Expr(:meta, :ispc, unmasked_id, :unmasked))
         $(block)
         $(Expr(:meta, :ispc, unmasked_id))
@@ -73,9 +83,17 @@ end
 
 """
 Replaces ISPC fragments inside a function definition with calls
-to the compiled ISPC functions.
+to the compiled ISPC functions:
+
+@ispc function test(arr)
+    ...
+    @foreach(arr) do idx
+        ...
+    end
+    ...
+end
 """
-macro ispc_function(func)
+macro ispc(func)
     signature, body = func.args
 
     # Expand, but don't lower the body. I don't know yet how
@@ -110,16 +128,19 @@ macro ispc_function(func)
     quoted_body = Expr(:quote, body)
     gen_body = quote
         # Get the typed AST from the original function:
-        typed_ast = code_typed($literal_def, ($(args...),))[1].args[3]
+        typed_ast = code_typed($literal_def, ($(args...),))[1]
         # Extract all ISPC fragments:
         ispc_funcs = ISPC.extract_ispc(typed_ast)
         # Replace these fragments with ISPC calls:
         body = $quoted_body
-        gen_body = ISPC.replace_calls(body, ispc_funcs)
-        # println("=============== gen_body ==================")
-        # println(gen_body)
+        main_body = ISPC.replace_calls(body, ispc_funcs)
+        # println("=============== final_body ==================")
+        # println(final_body)
         # println("===========================================")
-        gen_body
+        quote
+            ISPC.compile_all()
+            $main_body
+        end
     end
     gen_func = Expr(:function, signature, gen_body)
 
