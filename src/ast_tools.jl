@@ -50,21 +50,21 @@ Traverses `expr` and replaces nodes according to the
 substitutions in dict/function `subst`.
 """ 
 
-function substitute(obj::Any, subst::Dict)
+function substitute(subst::Dict, obj::Any)
     get(subst, obj, obj)
 end
 
-function substitute(expr::Expr, subst::Dict)
+function substitute(subst::Dict, expr::Expr)
     if haskey(subst, expr)
         return subst[expr]
     else
-        head = substitute(expr.head, subst)
-        args = [substitute(a, subst) for a in expr.args]
+        head = substitute(subst, expr.head)
+        args = [substitute(subst, a) for a in expr.args]
         return Expr(head, args...)
     end
 end
 
-function substitute(obj::Any, subst::Function)
+function substitute(subst::Function, obj::Any)
     result = subst(obj)
     if result != nothing
         return result
@@ -73,13 +73,13 @@ function substitute(obj::Any, subst::Function)
     end
 end
 
-function substitute(expr::Expr, subst::Function)
+function substitute(subst::Function, expr::Expr)
     result = subst(expr)
     if result != nothing
         return result
     else
-        head = substitute(expr.head, subst)
-        args = [substitute(a, subst) for a in expr.args]
+        head = substitute(subst, expr.head)
+        args = [substitute(subst, a) for a in expr.args]
         return Expr(head, args...)
     end
 end

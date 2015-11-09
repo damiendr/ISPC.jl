@@ -44,6 +44,8 @@ basefuncs = Dict(
         "Base.div_float" => (val1, val2) -> "($val1 / $val2)",
 
         "Base.sqrt_llvm" => (val) -> "sqrt($val)",
+        "Base.sqrt" => (val) -> "sqrt($val)",
+        "Base.log" => (val) -> "log($val)",
     )...,
 )
 

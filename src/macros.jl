@@ -94,6 +94,7 @@ to the compiled ISPC functions:
 end
 """
 macro ispc(func)
+
     signature, body = func.args
 
     # Expand, but don't lower the body. I don't know yet how
@@ -101,9 +102,12 @@ macro ispc(func)
     # AST to method, so we'll have to generate the Julia-side
     # code from the surface AST for now.
     body = macroexpand(body)
-    # println("============== body expanded =================")
-    # println(body)
-    # println("=============================================")
+    println("============== body expanded =================")
+    println(body)
+    println("=============================================")
+    println("============== body expanded-lowered =================")
+    println(expand(func.args[2]))
+    println("=============================================")
 
     # Parse the function signature:
     def = signature.args[1]
@@ -120,7 +124,7 @@ macro ispc(func)
     else
         error("Can't parse function name in $def")
     end
-    literal_def = substitute(def, Dict(name => gensym(name)))
+    literal_def = substitute(Dict(name => gensym(name)), def)
     literal_call = Expr(:call, literal_def, args...)
     literal_func = Expr(:function, literal_call, body)
 

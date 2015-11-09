@@ -56,8 +56,10 @@ function emit_ispc(obj::Any, ctx::EmitContext)
     error("Unhandled object: $obj ($(typeof(obj)))")
 end
 
-function emit_ispc(num::Float32, ctx::EmitContext)
+function emit_ispc(num::Real, ctx::EmitContext)
     return "$(Float64(num))"
+    # print as a Float64 because Julia has a non-C
+    # syntax for Float32 exponents eg. 2.134f10
 end
 
 function emit_ispc(num::Integer, ctx::EmitContext)
@@ -165,11 +167,32 @@ function emit_ispc(head::Type{Val{:if}}, args, ctx::EmitContext)
     """
 end
 
+function emit_ispc(head::Type{Val{:while}}, args, ctx::EmitContext)
+    test = emit_ispc(args[1], ctx)
+    block = args[2]
+    coherent = false
+    filter!(block.args) do stmt
+        if stmt == Expr(:meta, :ispc, :coherent)
+            coherent = true
+            return false
+        end
+        return true
+    end
+
+    keyword = coherent ? "cwhile" : "while"
+    do_block = indent(emit_ispc(block, ctx))
+    return """
+    $(keyword) ($test) {
+    $do_block
+    }
+    """
+end
+
+
 function emit_ispc(head::Type{Val{:foreach}}, args, ctx::EmitContext)
     targets, block = args
     body = indent(emit_ispc(block, ctx))
 
-    println(sexpr(targets))
     if length(targets) == 1 && targets[1].first == QuoteNode(:active)
         idx = ctx.cnames[targets[1].second]
         return """
@@ -210,6 +233,10 @@ function emit_ispc(head::Type{Val{:(=)}}, args, ctx::EmitContext)
         push!(ctx.declared, lhs)
 
         if isa(rhs, SymbolNode)
+            # This assignment is essentially an alias.
+            # Use a #define for it because that handles
+            # array types (for instance from arguments)
+            # in a transparent manner:
             return "#define $cname $rhs_code"
         end
 
@@ -233,22 +260,48 @@ function gen_ispc_func(name, ret_type, body, arg_types, arg_symbols...)
     """
 end
 
+import Graphs
 
 function to_ispc(fragment, var_types, cnames, sizes)
-    # Simplify jump analysis by replacing labels with line numbers:
+
+    # Get rid of line number nodes:
+    fragment = strip_lineno(fragment)
+
+    # Simplify jump analysis by replacing labels with direct indexing:
     statements = labels_to_lines(fragment)
 
-   # Recover a structured control flow:
-    ast = raise_ast(statements)
+    graph = to_graph(statements)
+    dot = Graphs.to_dot(graph)
+    open("graph.dot", "w") do f
+        write(f, dot)
+    end
 
-    # Get rid of line numbers:
-    ast = strip_lineno(ast) # yield a much cleaner AST
+    # println(Graphs.strongly_connected_components_recursive(graph))
+
+    # error("done")
+
+    # remove_dead_code!(statements)
+
+    # for (i, stmt) in enumerate(statements)
+    #     print("$i\t")
+    #     println(stmt)
+    # end
+
+    # Recover a structured control flow:
+    print_statements(STDOUT, statements)
+    statements = raise_ast(statements)
+    print_statements(STDOUT, statements)
+
+    error("done")
 
     # Make trees from opening and closing :ispc tags:
     ast = meta_to_trees(ast)
 
     # Collect the indices to foreach statements:
     ast = collect_foreach_indices(ast)
+
+
+#    ast = rewrite_libm_calls(ast)
 
     # Resolve TopNodes:
 #    ast = resolve_topnodes(ast)
@@ -300,7 +353,7 @@ function ispc_codegen(io, func_def, idx)
     cnames = substitute_identifiers(keys(var_types))
     argnames = [cnames[key] for key in argnames]
 
-    body = to_ispc(fragment, var_types, cnames, sizes)
+    body = indent(to_ispc(fragment, var_types, cnames, sizes))
 
     func_name = "ispc_func_$idx"
     func_code = gen_ispc_func(func_name, Void, body, argtypes, argnames...)
