@@ -111,14 +111,10 @@ function lines_to_labels(statements)
     program
 end
 
+
 import Graphs: add_edge!, in_degree, out_degree, simple_graph, in_neighbors
 
-type FlowEdge
-    visited::Bool
-end
-
 function to_graph(statements, i=1, g=simple_graph(length(statements)))
-
     while i <= length(statements)
         if out_degree(i, g) > 0
             break
@@ -152,9 +148,7 @@ end
 
 
 function push_visited!(s::Set, i...)
-    # if 16 in i
-    #     error("16")
-    # end
+    # -- debugging code goes here --
     Base.push!(s, i...)
 end
 
@@ -177,24 +171,14 @@ function raise_ast(statements, first=1, visited=Set(),
         incoming = filter(b -> b < i, antecedants)
         loopback = filter(b -> b > i, antecedants)
 
-        # println("#### visited: $visited")
-        # println("@@@@ $i converge $incoming $loopback")
-        # println("@@@@ head: $first continue: $continue_to, break: $break_to")
-        # flush(STDOUT)
-        # timedwait(0.1) do
-        #     false
-        # end
-
         if length(incoming) > 1
             # More than one branch converge onto this statement.
             # Don't enter until they have all been followed:
             if !(issubset(incoming, visited))
                 # flow has not reconverged yet.
-                # println("return")
                 return body, i
             end
         end
-        # println("enter")
 
         if !isempty(loopback)
             # A future statement points back here, that must be a
@@ -230,7 +214,7 @@ function raise_ast(statements, first=1, visited=Set(),
                 return body, nothing # don't follow
             elseif target <= i
                 print_statements(STDERR, statements)
-                error("Unhandled backwards goto: $i -> $target")
+                error("Unhandled backward goto: $i -> $target")
             else
                 # Just follow the jump (and discard the
                 # goto statement).
@@ -248,20 +232,18 @@ function raise_ast(statements, first=1, visited=Set(),
                 # This is a `do-while` block. Its body is formed
                 # by all previous statements since the start of
                 # the current branch:
-                println("DOWHILE at $i since $first")
                 push_visited!(visited, i)
                 stmt = Expr(:dowhile, condition, Expr(:block, body...))
                 return [stmt], break_to
 
             else
                 # This is an `if-then-else` block.
-                println("IF at $i: $visited")
 
                 # Don't add the `if` statement itself to the set of
                 # visited statements until all the branches have been
                 # explored, otherwise the last branch to be followed
-                # would swallow whatever comes after the `if` block
-                # whenever one of the `if` branches is empty.
+                # might swallow whatever comes after the `if` block
+                # (eg. when the `else` branch is empty).
 
                 # Follow the two branches independently until they
                 # reconverge.
@@ -277,7 +259,7 @@ function raise_ast(statements, first=1, visited=Set(),
                 push_visited!(visited, visitedA...)
                 push_visited!(visited, visitedB...)
                 push_visited!(visited, i)
-                
+
                 # Create a structured `if` block:
                 stmt = if isempty(ifelse)
                     Expr(:if, condition, Expr(:block, ifthen...))
@@ -287,20 +269,22 @@ function raise_ast(statements, first=1, visited=Set(),
                 end
                 push!(body, stmt)
 
-
+                # The tails should be all equal to each other or
+                # `nothing`:
                 tails = Set((tailsA, tailsB))
                 delete!(tails, nothing)
-
-
-                println("IF at $i")
-                println("$tails")
-
                 if length(tails) > 1
-                    error("Invalid if convergence at $i: $tails")
+                    # The flow did not reconverge properly. This might be
+                    # caused by a bug or by gotos that we don't know how
+                    # to handle.
+                    error("Invalid reconvergence at $i: $tailsA, $tailsB")
                 elseif length(tails) == 1
+                    # One of the branch has a non-void tail, follow up
+                    # on that:
                     i, = tails
                     continue
                 else
+                    # Both tails are void.
                     return body, nothing
                 end
             end
@@ -316,195 +300,6 @@ function raise_ast(statements, first=1, visited=Set(),
     # Either we reached a convergence point or the end of the flow:
     return body, nothing
 end
-
-
-#         # # First check if we reached a reconvergence point:
-#         # if i != range.start && infos.flow_degree[i] > 1
-#         #     @assert infos.jump_degree[i] == 0
-#         #     # Stop there and let the caller decide what to do:
-#         #     break
-#         # end
-
-#         # if i != range.start && infos.jump_degree[i] > 0
-#         #     # We reached a jump target: collapse the nested branch
-#         #     @assert infos.flow_degree[i] == 1
-#         #     stmt, tail = raise_control_flow(statements, i:range.stop, infos)
-#         #     push!(body, stmt)
-#         #     i = tail
-#         #     continue
-#         # end
-
-
-# function convergent(statements, incident, range::UnitRange)
-#     body = []
-#     i = range.start
-#     while i < range.stop
-#         stmt = statements[i]
-#         target = branch_target(stmt)
-#         if isa(stmt, GotoNode)
-#             i = target
-#             continue
-#         elseif isa(branch, Expr) && branch.head == :gotoifnot
-#             if target == range.start
-#                 # do-while loop
-
-#                 return 
-#             else
-#                 # if-else
-#             end
-#         end
-#         push!(body, stmt)
-#     end
-# end
-
-
-
-
-# function reconverge(statements, incident, range::UnitRange)
-#     branch = statements[range.start]
-#     @assert isa(branch, Expr) && branch.head == :gotoifnot
-#     condition, target = branch.args
-
-#     # Follow each of the divergent paths:
-#     spans = = (range.start+1:range.stop, target:range.stop)
-#     paths = [follow_branch(statements, incident, span) for span in spans]
-#     branches, tails = zip(paths...)
-
-#     # Where did the divergent paths end up?
-#     # This will tell us more about what kind of control flow
-#     # we are dealing with.
-
-#     if length(unique(tails)) == 1
-#         # The paths reconverged. This is an `if` construct.
-#         expr = Expr(:if, condition, branches[1], branches[2])
-#         return expr, tails[1]
-
-#     elseif length(unique(tails)) == 2
-#         # The paths did not converge.
-#         # Do the two tail nodes have the same predecessors?
-#         if incident[tails[1]] == incident[tails[2]]
-#             # This looks suspiciously like a `while` construct!
-#             if range.start in incident[tails[1]]
-#             end
-#         end
-#     end
-
-#     # What the hell was that?
-#     print_statements(STDERR, statements)
-#     error("Unhandled control flow: $range")
-# end
-
-# function reconverge(statements, incident, branches)
-#     tails = [node for (branch, node) in branches]
-#     while length(unique(tails)) > 1
-#         next_branch = indmin(tails)
-
-#     end
-#     tails = [follow_branch(statements, incident, path) for path in paths]
-# end
-
-# """
-# Removes unreachable statements by tracing execution paths
-# and removing unvisited lines:
-# """
-# function remove_dead_code!(statements)
-#     visited = Set()
-#     follow_branches(statements, 1, visited)
-#     for (i, stmt) in enumerate(statements)
-#         if !(i in visited)
-#             print("@@@")
-#         end
-#         print("$i\t")
-#         println(stmt)
-#     end
-#     unreachable = setdiff(1:length(statements), visited)
-#     deleteat!(statements, sort(unreachable))
-# end
-
-# function follow_branches(statements, pc, visited)
-#     i = pc
-#     while i <= length(statements)
-#         if i in visited
-#             return
-#         end
-#         stmt = statements[i]
-#         push!(visited, i)
-#         if isa(stmt, GotoNode)
-#             i = branch_target(stmt)
-#             continue
-#         end
-#         if isa(stmt, Expr) && stmt.head == :gotoifnot
-#             follow_branches(statements, branch_target(stmt), visited)
-#         end
-#         i += 1
-#     end
-# end
-
-
-# """
-# Raises the goto branches found in lowered AST to if/while constructs.
-# """
-# function raise_ast(statements, range=1:length(statements))
-#     # In general it might seem very hard to transform gotos back to structured
-#     # control statements, but we're not dealing with that general problem here:
-#     # the only gotos in the expression tree are those that were introduced by
-#     # the AST lowering pass. In these conditions it turns out that simple rules 
-#     # can recover `if`, `if-else` and `while` statements (`for` statements are
-#     # recovered as an equivalent `while`).
-#     program = []
-#     line = start(range)
-#     while line <= range.stop
-#         stmt = statements[line]
-#         if isa(stmt, Expr) && stmt.head == :gotoifnot
-#             # We have an if, if-else or while construct.
-#             condition, target = stmt.args
-
-#             # Let's look at the statement just before the jump target, this will tell
-#             # us what kind of control flow we are dealing with:
-#             tail = statements[target-1]
-#             after = branch_target(tail)
-#             if after != nothing
-#                 # The branch body ends with another branch. Let's investigate more:
-#                 if isa(tail, GotoNode)
-#                     @assert after > target > line
-#                     # The branch body ends with a forward goto:
-#                     # if-else construct
-#                     if_block = raise_ast(statements, line+1:target-2)
-#                     else_block = raise_ast(statements, target:after-1)
-#                     if_expr = Expr(:if, condition, if_block, else_block)
-#                     push!(program, if_expr)
-#                     line = after
-
-#                 elseif isa(tail, Expr) && tail.head == :gotoifnot
-#                     @assert target > line
-#                     @assert after == line + 1
-#                     # The branch body ends with a gotoifnot back to the start:
-#                     # while construct
-#                     while_block = raise_ast(statements, line+1:target-2)
-#                     while_expr = Expr(:while, condition, while_block)
-#                     push!(program, while_expr)
-#                     line = target
-#                 end
-#             else
-#                 # The branch body does not end with another branch:
-#                 # if construct
-#                 if_block = raise_ast(statements, line+1:target-2)
-#                 if_expr = Expr(:if, condition, if_block)
-#                 push!(program, if_expr)
-#                 line = target
-#             end
-#         else
-#             if isa(stmt, GotoNode)
-#                 # Follow the goto:
-#                 line = branch_target(stmt)
-#             else
-#                 push!(program, stmt)
-#                 cur, line = next(range, line)
-#             end
-#         end
-#     end
-#     Expr(:block, program...)
-# end
 
 
 function meta_to_trees(expr::Expr)
