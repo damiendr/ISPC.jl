@@ -167,7 +167,7 @@ function emit_ispc(head::Type{Val{:if}}, args, ctx::EmitContext)
     """
 end
 
-function emit_ispc(head::Type{Val{:while}}, args, ctx::EmitContext)
+function emit_ispc(head::Type{Val{:dowhile}}, args, ctx::EmitContext)
     test = emit_ispc(args[1], ctx)
     block = args[2]
     coherent = false
@@ -179,13 +179,21 @@ function emit_ispc(head::Type{Val{:while}}, args, ctx::EmitContext)
         return true
     end
 
-    keyword = coherent ? "cwhile" : "while"
+    keyword = coherent ? "cdo" : "do"
     do_block = indent(emit_ispc(block, ctx))
     return """
-    $(keyword) ($test) {
+    $(keyword) {
     $do_block
-    }
+    } while ($test);
     """
+end
+
+function emit_ispc(head::Type{Val{:continue}}, args, ctx::EmitContext)
+    return """continue;"""
+end
+
+function emit_ispc(head::Type{Val{:break}}, args, ctx::EmitContext)
+    return """break;"""
 end
 
 
@@ -269,30 +277,19 @@ function to_ispc(fragment, var_types, cnames, sizes)
 
     # Simplify jump analysis by replacing labels with direct indexing:
     statements = labels_to_lines(fragment)
+    # print_statements(STDOUT, statements)
 
-    graph = to_graph(statements)
-    dot = Graphs.to_dot(graph)
-    open("graph.dot", "w") do f
-        write(f, dot)
-    end
-
-    # println(Graphs.strongly_connected_components_recursive(graph))
-
-    # error("done")
-
-    # remove_dead_code!(statements)
-
-    # for (i, stmt) in enumerate(statements)
-    #     print("$i\t")
-    #     println(stmt)
+    # graph = to_graph(statements)
+    # dot = Graphs.to_dot(graph)
+    # open("graph.dot", "w") do f
+    #     write(f, dot)
     # end
 
     # Recover a structured control flow:
-    print_statements(STDOUT, statements)
-    statements = raise_ast(statements)
-    print_statements(STDOUT, statements)
+    statements, _ = raise_ast(statements)
+    # print_statements(STDOUT, statements)
 
-    error("done")
+    ast = Expr(:block, statements...)
 
     # Make trees from opening and closing :ispc tags:
     ast = meta_to_trees(ast)
@@ -300,6 +297,8 @@ function to_ispc(fragment, var_types, cnames, sizes)
     # Collect the indices to foreach statements:
     ast = collect_foreach_indices(ast)
 
+    # println(ast)
+    # error("done")
 
 #    ast = rewrite_libm_calls(ast)
 

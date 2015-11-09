@@ -159,7 +159,7 @@ function raise_ast(statements, first=1, visited=Set(),
                     break_to=nothing)
     body = []
     i = first
-    while i < length(statements)
+    while i <= length(statements)
         stmt = statements[i]
 
         # Any convergent flow?
@@ -233,7 +233,10 @@ function raise_ast(statements, first=1, visited=Set(),
                 # by all previous statements since the start of
                 # the current branch:
                 push_visited!(visited, i)
-                stmt = Expr(:dowhile, condition, Expr(:block, body...))
+                # We need to negate the condition to match do-while
+                # semantics:
+                while_condition = :(!$condition)
+                stmt = Expr(:dowhile, while_condition, Expr(:block, body...))
                 return [stmt], break_to
 
             else
@@ -288,13 +291,12 @@ function raise_ast(statements, first=1, visited=Set(),
                     return body, nothing
                 end
             end
-
-        else
-            # Branchless statement:
-            push!(visited, i)
-            push!(body, stmt)
-            i += 1
         end
+
+        # Branchless statement:
+        push!(visited, i)
+        push!(body, stmt)
+        i += 1
     end
 
     # Either we reached a convergence point or the end of the flow:
@@ -306,6 +308,7 @@ function meta_to_trees(expr::Expr)
     branches = []
     statements = expr.args
     for (range, identifier) in ispc_ranges(statements)
+        # println("@ $range, $identifier")
         if identifier == nothing
             append!(branches, statements[range])
         else
@@ -313,7 +316,7 @@ function meta_to_trees(expr::Expr)
             @assert meta.head == :meta
             meta_op = meta.args[3]
             meta_args = (meta.args[4:end]...)
-#            println("$meta $meta_op, $meta_args")
+            # println("$meta $meta_op, $meta_args")
             body = statements[(range.start+1):(range.stop-1)]
             tree = meta_to_trees(Expr(:block, body...))
             branch_expr = Expr(meta_op, meta_args..., tree)

@@ -32,14 +32,14 @@ Finds the ranges of statements that correspond to ISPC fragments.
 function ispc_ranges(statements)
     ranges = []
     cur_id = nothing
-    start = 0
+    start = 1
     for (i, stmt) in enumerate(statements)
         if isa(stmt, Expr) && stmt.head == :meta
             if stmt.args[1] == :ispc
                 identifier = stmt.args[2]
                 if cur_id == nothing && identifier != :coherent
                     # opening tag
-                    prev_range = start+1:i-1
+                    prev_range = start:i-1
                     if !isempty(prev_range)
                         push!(ranges, (prev_range, nothing))
                     end
@@ -49,12 +49,13 @@ function ispc_ranges(statements)
                     # closing tag
                     cur_id = nothing
                     push!(ranges, (start:i, identifier))
-                    start = i
+                    start = i+1
                 end
             end
         end
     end
-    tail_range = start+1:length(statements)
+    @assert cur_id == nothing
+    tail_range = start:length(statements)
     if !isempty(tail_range)
         push!(ranges, (tail_range, nothing))
     end

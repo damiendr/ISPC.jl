@@ -102,12 +102,12 @@ macro ispc(func)
     # AST to method, so we'll have to generate the Julia-side
     # code from the surface AST for now.
     body = macroexpand(body)
-    println("============== body expanded =================")
-    println(body)
-    println("=============================================")
-    println("============== body expanded-lowered =================")
-    println(expand(func.args[2]))
-    println("=============================================")
+    # println("============== body expanded =================")
+    # println(body)
+    # println("=============================================")
+    # println("============== body expanded-lowered =================")
+    # println(expand(func.args[2]))
+    # println("=============================================")
 
     # Parse the function signature:
     def = signature.args[1]
@@ -138,9 +138,9 @@ macro ispc(func)
         # Replace these fragments with ISPC calls:
         body = $quoted_body
         main_body = ISPC.replace_calls(body, ispc_funcs)
-        # println("=============== final_body ==================")
-        # println(final_body)
-        # println("===========================================")
+        println("=============== main_body ==================")
+        println(main_body)
+        println("===========================================")
         quote
             ISPC.compile_all()
             $main_body
