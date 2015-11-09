@@ -299,7 +299,7 @@ function raise_ast(statements, first=1, visited=Set(),
         i += 1
     end
 
-    # We reached either a convergence point or the end of the flow:
+    # We reached the end of the flow:
     return body, nothing
 end
 
