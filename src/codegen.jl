@@ -163,8 +163,7 @@ function emit_ispc(head::Type{Val{:if}}, args, ctx::EmitContext)
     return """
     $(if_keyword) ($test) {
     $thenblock
-    } $elsebranch
-    """
+    } $elsebranch"""
 end
 
 function emit_ispc(head::Type{Val{:dowhile}}, args, ctx::EmitContext)
@@ -184,8 +183,27 @@ function emit_ispc(head::Type{Val{:dowhile}}, args, ctx::EmitContext)
     return """
     $(keyword) {
     $do_block
-    } while ($test);
-    """
+    } while ($test);"""
+end
+
+function emit_ispc(head::Type{Val{:while}}, args, ctx::EmitContext)
+    test = emit_ispc(args[1], ctx)
+    block = args[2]
+    coherent = false
+    filter!(block.args) do stmt
+        if stmt == Expr(:meta, :ispc, :coherent)
+            coherent = true
+            return false
+        end
+        return true
+    end
+
+    keyword = coherent ? "cwhile" : "while"
+    do_block = indent(emit_ispc(block, ctx))
+    return """
+    $(keyword)($test) {
+    $do_block
+    }"""
 end
 
 function emit_ispc(head::Type{Val{:continue}}, args, ctx::EmitContext)
@@ -206,8 +224,7 @@ function emit_ispc(head::Type{Val{:foreach}}, args, ctx::EmitContext)
         return """
         foreach_active($idx) {
         $body
-        }
-        """
+        }"""
     end
 
     iters = []
@@ -219,16 +236,14 @@ function emit_ispc(head::Type{Val{:foreach}}, args, ctx::EmitContext)
     return """
     foreach($(iters...)) {
     $body
-    }
-    """
+    }"""
 end
 
 function emit_ispc(head::Type{Val{:unmasked}}, args, ctx::EmitContext)
     body = join([indent(emit_ispc(arg, ctx)) for arg in args], "\n")
     return """unmasked {
     $body
-    }
-    """
+    }"""
 end
 
 function emit_ispc(head::Type{Val{:(=)}}, args, ctx::EmitContext)

@@ -147,9 +147,48 @@ function print_statements(io, statements)
 end
 
 
-function push_visited!(s::Set, i...)
+function push_visited!(s::Set, items...)
     # -- debugging code goes here --
-    Base.push!(s, i...)
+    for i in items
+        Base.push!(s, i)
+    end
+end
+
+
+function raise_if_then_else(condition, ifthen, ifelse)
+    # Try to lift patterns such as this:
+    # if condition
+    #   do
+    #      block
+    #   while condition
+    # end
+    #
+    # into a simpler form:
+    # while condition
+    #    block
+    # end
+    if length(ifthen) == 1 && length(ifelse) == 0
+        expr, = ifthen
+        if isa(expr, Expr) && expr.head == :dowhile
+            docondition, doblock = expr.args
+            # Test that the conditions match via their string representation.
+            # Not the most elegant way but the most maintainable that I've
+            # found so far:
+            expected = ("!((Base.box)(Base.Bool,(Base.not_int)($condition)))",
+                        "!((top(!))($condition))")
+            if string(docondition) in expected
+                return Expr(:while, condition, doblock)
+            end
+        end
+    end
+
+    # Create a structured `if` block:
+    if isempty(ifelse)
+        return Expr(:if, condition, Expr(:block, ifthen...))
+    else
+        return Expr(:if, condition, Expr(:block, ifthen...),
+                                    Expr(:block, ifelse...))
+    end
 end
 
 
@@ -203,18 +242,24 @@ function raise_ast(statements, first=1, visited=Set(),
         # =============================
 
         if isa(stmt, GotoNode)
-            # Unconditional branch, not a divergence.
-            push_visited!(visited, i)
+            # Unconditional branch.
             target = branch_target(stmt)
+            push_visited!(visited, i)
+
+            # If the branch target matches one of our `continue`
+            # or `break` targets, insert the corresponding statement:
             if target == break_to
                 push!(body, Expr(:break))
                 return body, nothing # don't follow
+
             elseif target == continue_to
                 push!(body, Expr(:continue))
                 return body, nothing # don't follow
+
             elseif target <= i
                 print_statements(STDERR, statements)
                 error("Unhandled backward goto: $i -> $target")
+                
             else
                 # Just follow the jump (and discard the
                 # goto statement).
@@ -263,13 +308,8 @@ function raise_ast(statements, first=1, visited=Set(),
                 push_visited!(visited, visitedB...)
                 push_visited!(visited, i)
 
-                # Create a structured `if` block:
-                stmt = if isempty(ifelse)
-                    Expr(:if, condition, Expr(:block, ifthen...))
-                else
-                    Expr(:if, condition, Expr(:block, ifthen...),
-                                         Expr(:block, ifelse...))
-                end
+                # Build an `if` or `while` structured control flow:
+                stmt = raise_if_then_else(condition, ifthen, ifelse)
                 push!(body, stmt)
 
                 # The tails should be all equal to each other or
@@ -294,6 +334,8 @@ function raise_ast(statements, first=1, visited=Set(),
         end
 
         # Branchless statement:
+        # =============================
+
         push!(visited, i)
         push!(body, stmt)
         i += 1

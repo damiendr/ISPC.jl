@@ -138,9 +138,9 @@ macro ispc(func)
         # Replace these fragments with ISPC calls:
         body = $quoted_body
         main_body = ISPC.replace_calls(body, ispc_funcs)
-        println("=============== main_body ==================")
-        println(main_body)
-        println("===========================================")
+        # println("=============== main_body ==================")
+        # println(main_body)
+        # println("===========================================")
         quote
             ISPC.compile_all()
             $main_body
