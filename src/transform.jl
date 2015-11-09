@@ -167,9 +167,9 @@ function raise_ast(statements, first=1, visited=Set(),
 
         # Distinguish between forward and backward jumps to this
         # statement:
-        antecedants = Set(in_neighbors(i, graph))
-        incoming = filter(b -> b < i, antecedants)
-        loopback = filter(b -> b > i, antecedants)
+        antecedents = Set(in_neighbors(i, graph))
+        incoming = filter(b -> b < i, antecedents)
+        loopback = filter(b -> b > i, antecedents)
 
         if length(incoming) > 1
             # More than one branch converge onto this statement.
@@ -282,7 +282,7 @@ function raise_ast(statements, first=1, visited=Set(),
                     # to handle.
                     error("Invalid reconvergence at $i: $tailsA, $tailsB")
                 elseif length(tails) == 1
-                    # One of the branch has a non-void tail, follow up
+                    # One of the branches has a non-void tail, follow up
                     # on that:
                     i, = tails
                     continue
@@ -299,7 +299,7 @@ function raise_ast(statements, first=1, visited=Set(),
         i += 1
     end
 
-    # Either we reached a convergence point or the end of the flow:
+    # We reached either a convergence point or the end of the flow:
     return body, nothing
 end
 
