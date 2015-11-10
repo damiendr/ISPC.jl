@@ -259,11 +259,13 @@ function raise_ast(statements, first=1, visited=Set(),
             # or `break` targets, insert the corresponding statement:
             if target == break_to
                 push!(body, Expr(:break))
-                return body, nothing # don't follow
+                return body, nothing # don't follow breaks, they take
+                                     # us out of the current do-while
 
             elseif target == continue_to
                 push!(body, Expr(:continue))
-                return body, continue_to # don't follow
+                return body, continue_to # follow that one to the
+                                         # do-while loop check
 
             elseif target <= i
                 print_statements(STDERR, statements)

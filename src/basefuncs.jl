@@ -44,6 +44,7 @@ basefuncs = Dict(
         "Base.lt_float" => (val1, val2) -> "($val1 < $val2)",
         "Base.le_float" => (val1, val2) -> "($val1 <= $val2)",
         "Base.neg_float" => (val) -> "(-$val)",
+        "Base.abs_float" => (val) -> "abs($val)",
         "Base.add_float" => (val1, val2) -> "($val1 + $val2)",
         "Base.sub_float" => (val1, val2) -> "($val1 - $val2)",
         "Base.mul_float" => (val1, val2) -> "($val1 * $val2)",
