@@ -24,7 +24,7 @@ basefuncs = Dict(
     Base.fptosi => (typ, value) -> "(($typ)$value)",
     Base.checked_trunc_sint => (typ, value) -> "(($typ)$value)",
     Base.fpext => (typ, value) -> "(($typ)$value)",
-
+    Base.fptrunc => (typ, value) -> "(($typ)$value)",
 
     (<) => (val1, val2) -> "($val1 < $val2)",
     (!) => (val1) -> "(!$val1)",
@@ -35,6 +35,9 @@ basefuncs = Dict(
         "Base.and_int" => (val1, val2) -> "($val1 && $val2)",
         "Base.slt_int" => (val1, val2) -> "($val1 < $val2)",
         "Base.sle_int" => (val1, val2) -> "($val1 <= $val2)",
+        "Base.add_int" => (val1, val2) -> "($val1 + $val2)",
+        "Base.sub_int" => (val1, val2) -> "($val1 - $val2)",
+        "Base.mul_int" => (val1, val2) -> "($val1 * $val2)",
 
         "Base.eq_float" => (val1, val2) -> "($val1 == $val2)",
         "Base.ne_float" => (val1, val2) -> "($val1 != $val2)",

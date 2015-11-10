@@ -154,6 +154,10 @@ function push_visited!(s::Set, items...)
     end
 end
 
+function Base.isless(a::Int64, b::Void)
+    Base.show_backtrace(STDERR, backtrace())
+    error("$a, $b")
+end
 
 function raise_if_then_else(condition, ifthen, ifelse)
     # Try to lift patterns such as this:
@@ -231,8 +235,13 @@ function raise_ast(statements, first=1, visited=Set(),
                 stmt, tail = raise_ast(statements, i, visited, graph,
                                        cont, brk)
                 push!(body, stmt...)
-                i = tail
-                continue
+
+                if tail != nothing
+                    i = tail
+                    continue
+                else
+                    return body, brk
+                end
             else
                 # We're already inside that do-while block.
             end
@@ -254,12 +263,12 @@ function raise_ast(statements, first=1, visited=Set(),
 
             elseif target == continue_to
                 push!(body, Expr(:continue))
-                return body, nothing # don't follow
+                return body, continue_to # don't follow
 
             elseif target <= i
                 print_statements(STDERR, statements)
                 error("Unhandled backward goto: $i -> $target")
-                
+
             else
                 # Just follow the jump (and discard the
                 # goto statement).
@@ -273,7 +282,8 @@ function raise_ast(statements, first=1, visited=Set(),
             # control flow statement.
             condition, target = stmt.args
 
-            if target == first
+            if target < i
+                @assert target == first
                 # This is a `do-while` block. Its body is formed
                 # by all previous statements since the start of
                 # the current branch:
