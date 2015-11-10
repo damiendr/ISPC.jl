@@ -1,39 +1,57 @@
 
+type ISPCFunction
+    idx::Integer
+    signature::Vector{Any}
+    var_types::Dict{Any,DataType}
+    fragment::Vector{Any}
+end
+
 const ispc_fptr = Array(Ptr{Void},0)
-const ispc_funcs = Array(Any, 0)
+const ispc_funcs = Array(Tuple{ISPCFunction,Cmd}, 0)
 
 
-function compile_functions(range)
+using DataStructures
+
+function compile_functions(funcs, opts=``)
     code_io = IOBuffer()
-    new_funcs = []
-    for idx in range
-        func = ispc_funcs[idx]
-        name = ispc_codegen(code_io, func, idx)
-        push!(new_funcs, (idx, name))
+    func_symbols = []
+    for func in funcs
+        ispc_name = ispc_codegen(code_io, func)
+        push!(func_symbols, (func.idx, ispc_name))
     end
 
     ispc_code = takebuf_string(code_io)
-
     println(ispc_code)
     
-    lib = load_ispc(ispc_code)
-    for (idx, name) in new_funcs
-        fptr = Libdl.dlsym(lib, name)
-        ispc_fptr[idx] = fptr # note resize!() earlier
+    lib = load_ispc(ispc_code, opts)
+    for (idx, ispc_name) in func_symbols
+        fptr = Libdl.dlsym(lib, ispc_name)
+        ispc_fptr[idx] = fptr
     end
 end
 
 
 function compile_all()
     if length(ispc_funcs) > length(ispc_fptr)
-        new_range = length(ispc_fptr)+1:length(ispc_funcs)
+        new_funcs = ispc_funcs[length(ispc_fptr)+1:end]
         resize!(ispc_fptr, length(ispc_funcs))
-        compile_functions(new_range)
+
+        # group the functions by compiler options:
+        funcs_by_opts = MultiDict()
+        for (func, opts) in new_funcs
+            push!(funcs_by_opts, opts => func)
+        end
+
+        # compile each group of functions separately:
+        for (opts, funcs) in funcs_by_opts
+            compile_functions(funcs, opts)
+        end
     end
+    @assert all([isdefined(ispc_fptr, idx) for idx in eachindex(ispc_fptr)])
 end
 
 
-function new_ispc_func(params, var_types, fragment)
+function new_ispc_func(params, var_types, fragment, opts)
     argtypes = [] # ccall argument types
     argexprs = [] # ccall argument values
     signature = []
@@ -64,8 +82,9 @@ function new_ispc_func(params, var_types, fragment)
         end
     end
 
-    push!(ispc_funcs, (signature, var_types, fragment))
-    func_idx = length(ispc_funcs)
+    func_idx = length(ispc_funcs)+1
+    func = ISPCFunction(func_idx, signature, var_types, fragment)
+    push!(ispc_funcs, (func, opts))
     quote
         ccall(ISPC.ispc_fptr[$func_idx],
             Void, ($(argtypes...),), $(argexprs...))

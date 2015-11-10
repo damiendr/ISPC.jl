@@ -1,18 +1,25 @@
 
 
-function fast_variants(pairs...)
+function fastmath_variants(pairs...)
     result = []
-    for pair in pairs
-        func_name = pair.first
-        func_def = pair.second
+    for (func_name, func_def) in pairs
         push!(result, eval(parse(func_name)) => func_def)
         try
-            fast = eval(parse(func_name * "_fast"))
+            fast = eval(parse("$(func_name)_fast"))
             push!(result, fast => func_def)
         end
     end
     result
 end
+
+function openlibm_variants(pairs...)
+    result = []
+    for (func_name, func_def) in pairs
+        push!(result, ("$(func_name)", "libopenlibm") => func_def)
+        push!(result, ("$(func_name)f", "libopenlibm") => func_def)
+    end
+    result
+end    
 
 basefuncs = Dict(
 
@@ -26,33 +33,44 @@ basefuncs = Dict(
     Base.fpext => (typ, value) -> "(($typ)$value)",
     Base.fptrunc => (typ, value) -> "(($typ)$value)",
 
-    (<) => (val1, val2) -> "($val1 < $val2)",
-    (!) => (val1) -> "(!$val1)",
+    (<) => (a, b) -> "($a < $b)",
+    (!) => (a) -> "(!$a)",
 
-    fast_variants(
-        "Base.not_int" => (val1) -> "(!$val1)",
-        "Base.or_int" => (val1, val2) -> "($val1 || $val2)",
-        "Base.and_int" => (val1, val2) -> "($val1 && $val2)",
-        "Base.slt_int" => (val1, val2) -> "($val1 < $val2)",
-        "Base.sle_int" => (val1, val2) -> "($val1 <= $val2)",
-        "Base.add_int" => (val1, val2) -> "($val1 + $val2)",
-        "Base.sub_int" => (val1, val2) -> "($val1 - $val2)",
-        "Base.mul_int" => (val1, val2) -> "($val1 * $val2)",
+    fastmath_variants(
+        "Base.not_int" => (a) -> "(!$a)",
+        "Base.or_int" => (a,b) -> "($a || $b)",
+        "Base.and_int" => (a,b) -> "($a && $b)",
+        "Base.slt_int" => (a,b) -> "($a < $b)",
+        "Base.sle_int" => (a,b) -> "($a <= $b)",
+        "Base.add_int" => (a,b) -> "($a + $b)",
+        "Base.sub_int" => (a,b) -> "($a - $b)",
+        "Base.mul_int" => (a,b) -> "($a * $b)",
 
-        "Base.eq_float" => (val1, val2) -> "($val1 == $val2)",
-        "Base.ne_float" => (val1, val2) -> "($val1 != $val2)",
-        "Base.lt_float" => (val1, val2) -> "($val1 < $val2)",
-        "Base.le_float" => (val1, val2) -> "($val1 <= $val2)",
-        "Base.neg_float" => (val) -> "(-$val)",
-        "Base.abs_float" => (val) -> "abs($val)",
-        "Base.add_float" => (val1, val2) -> "($val1 + $val2)",
-        "Base.sub_float" => (val1, val2) -> "($val1 - $val2)",
-        "Base.mul_float" => (val1, val2) -> "($val1 * $val2)",
-        "Base.div_float" => (val1, val2) -> "($val1 / $val2)",
+        "Base.eq_float" => (a,b) -> "($a == $b)",
+        "Base.ne_float" => (a,b) -> "($a != $b)",
+        "Base.lt_float" => (a,b) -> "($a < $b)",
+        "Base.le_float" => (a,b) -> "($a <= $b)",
+        "Base.neg_float" => (a) -> "(-$a)",
+        "Base.abs_float" => (a) -> "abs($a)",
+        "Base.add_float" => (a,b) -> "($a + $b)",
+        "Base.sub_float" => (a,b) -> "($a - $b)",
+        "Base.mul_float" => (a,b) -> "($a * $b)",
+        "Base.div_float" => (a,b) -> "($a / $b)",
 
-        "Base.sqrt_llvm" => (val) -> "sqrt($val)",
-        "Base.sqrt" => (val) -> "sqrt($val)",
-        "Base.log" => (val) -> "log($val)",
+        "Base.sqrt_llvm" => (a) -> "sqrt($a)",
+        "Base.sqrt" => (a) -> "sqrt($a)",
     )...,
+
+    openlibm_variants(
+        "sin" => (a) -> "sin($a)",
+        "cos" => (a) -> "cos($a)",
+        "tan" => (a) -> "tan($a)",
+        "asin" => (a) -> "sin($a)",
+        "acos" => (a) -> "cos($a)",
+        "atan" => (a) -> "tan($a)",
+        "exp" => (a) -> "exp($a)",
+        "log" => (a) -> "log($a)",
+        "pow" => (a,b) -> "pow($a,$b)",
+    )...
 )
 

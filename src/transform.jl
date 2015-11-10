@@ -418,6 +418,20 @@ function resolve_topnodes(ast::Expr)
 end
 
 
+function parse_ccall(expr::Expr)
+    if expr.head == :call && expr.args[1] == TopNode(:ccall)
+        cargs = expr.args[2:end]
+        func = eval(cargs[1])
+        ret_type = eval(cargs[2])
+        arg_types = eval(cargs[3])
+        arg_vals = cargs[4:4+length(arg_types)-1]
+        # there is sometimes one extra arg to ccall, with a value of 0
+        return func, ret_type, arg_vals
+    end
+    return nothing
+end
+
+
 """
 Julia lowers some mathematical functions to ccals to libm.
 We need to trap these cases and substitute something that
@@ -425,12 +439,9 @@ is easier for the code generator to bind to ISPC's stdlib.
 """
 function rewrite_libm_calls(ast::Expr)
     substitute(ast) do expr
-        if isa(expr, Expr) && expr.head == :call
-            func = expr.args[1]
-            args = expr.args[2:end]
-            if func == TopNode(:ccal)
-                dump(args)
-            end
+        call_def = parse_ccall(expr)
+        if call_def != nothing
+            func, ret_type, arg_vals = call_def
         end
     end
 end

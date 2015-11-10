@@ -66,8 +66,8 @@ end
 """
 Registers a new ISPC fragment.
 """
-function add_ispc_function!(func_calls, identifier, params, var_types, ast)
-    func_call = new_ispc_func(params, var_types, ast)
+function add_ispc_function!(func_calls, identifier, func_def)
+    func_call = new_ispc_func(func_def...)
     func_calls[identifier] = func_call
 end
 
@@ -75,7 +75,7 @@ end
 """
 Extracts ISPC fragments in `body` and return a dict of ISPC functions.
 """
-function extract_ispc(typed_ast)
+function extract_ispc(typed_ast, opts=``)
     var_types = Dict()
     local_vars = typed_ast.args[2][1]
     env_vars = typed_ast.args[2][2]
@@ -103,7 +103,7 @@ function extract_ispc(typed_ast)
         params = extract_params(statements, range)
         # Turn the fragment into an ISPC function:
         fragment = statements[range]
-        add_ispc_function!(func_calls, identifier, params, var_types, fragment)
+        add_ispc_function!(func_calls, identifier, (params, var_types, fragment, opts))
     end
     func_calls
 end

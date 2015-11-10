@@ -100,7 +100,7 @@ function emit_ispc(expr::Expr, ctx::EmitContext)
 end
 
 function emit_ispc(head::Any, args, ctx::EmitContext)
-    return "// $(sexpr(head)) $(sexpr(args))"
+    return "unsupported!!: $(sexpr(head)) $(sexpr(args))"
 end
 
 function emit_ispc(head::Type{Val{:block}}, args, ctx::EmitContext)
@@ -116,16 +116,29 @@ end
 
 function emit_ispc(head::Type{Val{:call}}, args, ctx::EmitContext)
 
-    func = eval(args[1])
+    f_expr = args[1]
+    f_args = args[2:end]
+    f_argtypes = (map(typeof, f_args)...)
 
     # catch a few corner cases:
-    if func == getfield
-        argtypes = map(typeof, args[2:end])
-        if (argtypes...,) == (GlobalRef, QuoteNode)
-            mod = eval(args[2])
-            symbol = args[3].value
-            return eval(GlobalRef(mod, symbol), ctx)
-        end
+    if f_expr == TopNode(:getfield) && f_argtypes == (GlobalRef, QuoteNode)
+        # getfield(GlobalRef, QuoteNode) points to an object that we
+        # should be able to resolve here:
+        mod = eval(f_args[1])
+        symbol = f_args[2].value
+        return eval(GlobalRef(mod, symbol), ctx)
+
+    elseif f_expr == TopNode(:ccall)
+        # We can't ccall from inside ISPC, but we can rewrite
+        # some ccalls, eg. those to math functions.
+        func = eval(f_args[1])
+        f_argtypes = eval(f_args[3])
+        f_args = f_args[4:4+length(f_argtypes)-1]        
+        # there is sometimes one extra arg to ccall, so
+        # make sure to take only as many as in arg_types.
+
+    else
+        func = eval(f_expr)
     end
 
     func = try
@@ -134,7 +147,7 @@ function emit_ispc(head::Type{Val{:call}}, args, ctx::EmitContext)
         error("Unhandled function $func from $(sexpr(args))")
     end
 
-    cargs = [emit_ispc(arg, ctx) for arg in args[2:end]]
+    cargs = [emit_ispc(arg, ctx) for arg in f_args]
     return func(cargs...)
 end
 
@@ -340,36 +353,32 @@ function to_ispc(fragment, var_types, cnames, sizes)
 end
 
 
-function ispc_codegen(io, func_def, idx)
-    signature, var_types, fragment = func_def
-
-    # println(var_types)
-    # println(Expr(:block, fragment...))
+function ispc_codegen(io, func::ISPCFunction)
 
     sizes = Dict()
     argtypes = []
     argnames = []
-    for arg in signature
+    for arg in func.signature
         if isa(arg, Symbol)
             push!(argnames, arg)
-            push!(argtypes, var_types[arg])
+            push!(argtypes, func.var_types[arg])
         else
             symbol = arg[1]
             sizes[symbol] = arg[2:end]
             for a in arg
                 push!(argnames, a)
-                push!(argtypes, var_types[a])
+                push!(argtypes, func.var_types[a])
             end
         end
     end
 
     # Replace Julia identifier with C-compatible ones:
-    cnames = substitute_identifiers(keys(var_types))
+    cnames = substitute_identifiers(keys(func.var_types))
     argnames = [cnames[key] for key in argnames]
 
-    body = indent(to_ispc(fragment, var_types, cnames, sizes))
+    body = indent(to_ispc(func.fragment, func.var_types, cnames, sizes))
 
-    func_name = "ispc_func_$idx"
+    func_name = "ispc_func_$(func.idx)"
     func_code = gen_ispc_func(func_name, Void, body, argtypes, argnames...)
     write(io, func_code)
     return func_name

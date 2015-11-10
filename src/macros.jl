@@ -93,7 +93,13 @@ to the compiled ISPC functions:
     ...
 end
 """
-macro ispc(func)
+macro ispc(args...)
+    if length(args) == 2
+        opts, func = args
+    else
+        func, = args
+        opts = ``
+    end
 
     signature, body = func.args
 
@@ -134,7 +140,7 @@ macro ispc(func)
         # Get the typed AST from the original function:
         typed_ast = code_typed($literal_def, ($(args...),))[1]
         # Extract all ISPC fragments:
-        ispc_funcs = ISPC.extract_ispc(typed_ast)
+        ispc_funcs = ISPC.extract_ispc(typed_ast, $opts)
         # Replace these fragments with ISPC calls:
         body = $quoted_body
         main_body = ISPC.replace_calls(body, ispc_funcs)
