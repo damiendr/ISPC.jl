@@ -41,7 +41,7 @@ function load_ispc(code, options=``)
         
         # Pipe the input program to ispc:
         ispc_cmd = `ispc -o "$objfile" --pic $options -`
-        open(ispc_cmd, "w", STDOUT) do stdin
+        open(ispc_cmd, "w", STDERR) do stdin
             write(stdin, code)
         end
         

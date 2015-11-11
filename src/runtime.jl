@@ -15,6 +15,7 @@ using DataStructures
 function compile_functions(funcs, opts=``)
     code_io = IOBuffer()
     func_symbols = []
+    write(code_io, ispc_includes)
     for func in funcs
         ispc_name = ispc_codegen(code_io, func)
         push!(func_symbols, (func.idx, ispc_name))

@@ -25,12 +25,27 @@ function to_c_type(T, name="")
     end
 end
 
-const includes = """
+const ispc_includes = """
+// A number of definitions to accomodate some quirks in the generated
+// code.
 
 struct UnitRange {
     const int64 start;
     const int64 stop;
 };
+
+// Use ISPC's multiple dispatch capabilities to deal with the fact
+// that Julia uses the same function for bitwise and boolean NOT,
+// whereas the ~ operator in ISPC does not work on booleans:
+inline bool __not(bool val) {return !val;} // boolean NOT
+inline int8 __not(int8 val) {return ~val;} // all others are bitwise
+inline int16 __not(int16 val) {return ~val;}
+inline int32 __not(int32 val) {return ~val;}
+inline int64 __not(int64 val) {return ~val;}
+inline unsigned int8 __not(unsigned int8 val) {return ~val;}
+inline unsigned int16 __not(unsigned int16 val) {return ~val;}
+inline unsigned int32 __not(unsigned int32 val) {return ~val;}
+inline unsigned int64 __not(unsigned int64 val) {return ~val;}
 
 """
 
@@ -39,7 +54,6 @@ function gen_ispc_call(call_id, ret_type, arg_types, arg_symbols...)
         ccall(call_id, ret_type, arg_types, arg_symbols...)
     end
 end
-
 
 immutable EmitContext
     types::Dict
@@ -57,9 +71,9 @@ function emit_ispc(obj::Any, ctx::EmitContext)
 end
 
 function emit_ispc(num::Real, ctx::EmitContext)
-    return "$(Float64(num))"
-    # print as a Float64 because Julia has a non-C
-    # syntax for Float32 exponents eg. 2.134f10
+    # Use hexadecimal float literals so that we
+    # can represent the number exactly:
+    return @sprintf("%a",num)
 end
 
 function emit_ispc(num::Integer, ctx::EmitContext)
@@ -78,12 +92,14 @@ function emit_ispc(node::QuoteNode, ctx::EmitContext)
     return node.value
 end
 
+function emit_ispc(newvar::NewvarNode, ctx::EmitContext)
+    cname = ctx.cnames[newvar.name]
+    decl = to_c_type(ctx.types[newvar.name], cname)
+    push!(ctx.declared, newvar.name)
+    return "$(decl);"
+end
 
 function emit_ispc(top::TopNode, ctx::EmitContext)
-    # if top.name == :getfield
-    #     error("stop")
-    #     return GlobalRef
-    # end
     error("Unhandled: $(sexpr(top))")
 end
 
@@ -120,17 +136,18 @@ function emit_ispc(head::Type{Val{:call}}, args, ctx::EmitContext)
     f_args = args[2:end]
     f_argtypes = (map(typeof, f_args)...)
 
-    # catch a few corner cases:
+    # Catch a few corner cases:
     if f_expr == TopNode(:getfield) && f_argtypes == (GlobalRef, QuoteNode)
         # getfield(GlobalRef, QuoteNode) points to an object that we
         # should be able to resolve here:
         mod = eval(f_args[1])
         symbol = f_args[2].value
         return eval(GlobalRef(mod, symbol), ctx)
+    end
 
-    elseif f_expr == TopNode(:ccall)
-        # We can't ccall from inside ISPC, but we can rewrite
-        # some ccalls, eg. those to math functions.
+    if f_expr == TopNode(:ccall)
+        # We don't generally support ccall() in ISPC code,
+        # but we can rewrite some to calls to ISPC's stdlib:
         func = eval(f_args[1])
         f_argtypes = eval(f_args[3])
         f_args = f_args[4:4+length(f_argtypes)-1]        
@@ -138,17 +155,18 @@ function emit_ispc(head::Type{Val{:call}}, args, ctx::EmitContext)
         # make sure to take only as many as in arg_types.
 
     else
+        # Just resolve the function:
         func = eval(f_expr)
     end
 
-    func = try
-       basefuncs[func]
+    codegen_func = try
+        basefuncs[func]
     catch
         error("Unhandled function $func from $(sexpr(args))")
     end
 
     cargs = [emit_ispc(arg, ctx) for arg in f_args]
-    return func(cargs...)
+    return codegen_func(cargs...)
 end
 
 function emit_ispc(head::Type{Val{:if}}, args, ctx::EmitContext)
@@ -325,30 +343,15 @@ function to_ispc(fragment, var_types, cnames, sizes)
     # Collect the indices to foreach statements:
     ast = collect_foreach_indices(ast)
 
-    # println(ast)
-    # error("done")
-
-#    ast = rewrite_libm_calls(ast)
-
-    # Resolve TopNodes:
-#    ast = resolve_topnodes(ast)
-
-#    println()
-#    dump(ast, 100)
-#    println(ast)
-#    println()
-
-#    println(ast)
-
     # Emit ISPC code:
     ctx = EmitContext(var_types, cnames, sizes, Set())
 
-#    code = try
-    code = emit_ispc(ast, ctx)
-#    catch e
-#        println(ast)
-#        rethrow(e)
-#    end
+    code = try
+        emit_ispc(ast, ctx)
+    catch e
+       println(STDERR, ast)
+       rethrow(e)
+    end
     return code
 end
 
