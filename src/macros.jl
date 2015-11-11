@@ -27,7 +27,9 @@ macro foreach(func_expr, array_expr...)
     foreach_id = gensym(:foreach)
     code = ispc_esc(quote
         $(Expr(:meta, :ispc, foreach_id, :foreach, array_expr))
-        let $([:($a = ISPC.foreachindex($s)) for (s, a) in zip(array_expr, signature.args)]...)
+        let $([:($a = ISPC.foreachindex($i, $s))
+                    for (i, (s, a)) in enumerate(
+                            zip(array_expr, signature.args))]...)
             $block
         end
         $(Expr(:meta, :ispc, foreach_id))
@@ -39,7 +41,7 @@ end
 # That function will not be called, its sole purpose
 # is to give a type to foreach indices so that type
 # inference can work on them:
-@noinline foreachindex(arr) = 1
+@noinline foreachindex(args...) = 1
 
 
 """
@@ -85,7 +87,7 @@ end
 Replaces ISPC fragments inside a function definition with calls
 to the compiled ISPC functions:
 
-@ispc function test(arr)
+@ispc [`compiler options`] function test(arr)
     ...
     @foreach(arr) do idx
         ...

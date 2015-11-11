@@ -84,6 +84,10 @@ function emit_ispc(symbol::SymbolNode, ctx::EmitContext)
     return ctx.cnames[symbol.name]
 end
 
+function emit_ispc(symbol::Symbol, ctx::EmitContext)
+    return ctx.cnames[symbol]
+end
+
 function emit_ispc(symbol::GenSym, ctx::EmitContext)
     return ctx.cnames[symbol]
 end
@@ -93,7 +97,10 @@ function emit_ispc(node::QuoteNode, ctx::EmitContext)
 end
 
 function emit_ispc(newvar::NewvarNode, ctx::EmitContext)
-    cname = ctx.cnames[newvar.name]
+    cname = get(ctx.cnames, newvar.name, nothing)
+    if cname == nothing
+        return ""
+    end
     decl = to_c_type(ctx.types[newvar.name], cname)
     push!(ctx.declared, newvar.name)
     return "$(decl);"
@@ -159,14 +166,60 @@ function emit_ispc(head::Type{Val{:call}}, args, ctx::EmitContext)
         func = eval(f_expr)
     end
 
-    codegen_func = try
-        basefuncs[func]
-    catch
-        error("Unhandled function $func from $(sexpr(args))")
-    end
+    return emit_func_call(func, f_args, ctx)
 
-    cargs = [emit_ispc(arg, ctx) for arg in f_args]
-    return codegen_func(cargs...)
+    # codegen_func = try
+    #     basefuncs[func]
+    # catch
+    #     error("Unhandled function $func from $(sexpr(args))")
+    # end
+
+    # cargs = [emit_ispc(arg, ctx) for arg in f_args]
+    # return codegen_func(cargs...)
+end
+
+
+function emit_func_call(f, args, ctx::EmitContext)
+    if f == Base.arrayref
+        return do_arrayref(ctx, args...)
+    elseif f == Base.arrayset
+        return do_arrayset(ctx, args...)
+    else
+        fgen = basefuncs[f]
+        fargs = [emit_ispc(arg, ctx) for arg in args]
+        return fgen(fargs...)
+    end
+end
+
+function col_major_index(sizes, indices)
+    expr = indices[end]
+    for i in length(sizes)-1:-1:1
+        expr= :($(indices[i]) + $(sizes[i]) * $expr)
+    end
+    expr
+end
+
+function do_arrayref(ctx::EmitContext, array, I...)
+    return indexed_array(ctx, array, I...)
+end
+
+function do_arrayset(ctx::EmitContext, array, value, I...)
+    item = indexed_array(ctx, array, I...)
+    val = emit_ispc(value, ctx)
+    return "$item = $val;"
+end
+
+function indexed_array(ctx::EmitContext, array, I...)
+    arr = emit_ispc(array, ctx)
+    sizes = ctx.sizes[array.name]
+    if length(I) == 1
+        idx, = emit_ispc(I, ctx)
+    elseif length(I) == length(sizes)
+        idx = emit_ispc(col_major_index(sizes, I), ctx)
+    else
+        error("There must be either one index or as many as dimensions")
+    end
+    return "$arr[$idx]"
 end
 
 function emit_ispc(head::Type{Val{:if}}, args, ctx::EmitContext)
@@ -259,10 +312,21 @@ function emit_ispc(head::Type{Val{:foreach}}, args, ctx::EmitContext)
     end
 
     iters = []
-    for (array, index) in targets
+    for (object, index) in targets
         idx = ctx.cnames[index]
-        len = ctx.sizes[array.name][1]
-        push!(iters, "$idx = 0 ... $len")
+        if isa(object, SymbolNode)
+            # It's an array symbol
+            len = ctx.sizes[object.name][1]
+            push!(iters, "$idx = 0 ... $len")
+        elseif isa(object, Expr) && object.head == :(:)
+            # It's a literal range
+            start = emit_ispc(object.args[1], ctx)
+            stop = emit_ispc(object.args[2], ctx)
+            push!(iters, "$idx = $start ... $stop")
+        else
+            dump(object)
+            error("unsupported iteration object: $object")
+        end
     end
     return """
     foreach($(iters...)) {
@@ -285,15 +349,6 @@ function emit_ispc(head::Type{Val{:(=)}}, args, ctx::EmitContext)
     declared = lhs in ctx.declared
     if !declared
         push!(ctx.declared, lhs)
-
-        if isa(rhs, SymbolNode)
-            # This assignment is essentially an alias.
-            # Use a #define for it because that handles
-            # array types (for instance from arguments)
-            # in a transparent manner:
-            return "#define $cname $rhs_code"
-        end
-
         decl = to_c_type(ctx.types[lhs], cname)
         return "$decl = $rhs_code;"
     else
@@ -318,18 +373,20 @@ import Graphs
 
 function to_ispc(fragment, var_types, cnames, sizes)
 
+    println(var_types)
+
     # Get rid of line number nodes:
     fragment = strip_lineno(fragment)
 
     # Simplify jump analysis by replacing labels with direct indexing:
     statements = labels_to_lines(fragment)
-    # print_statements(STDOUT, statements)
+    print_statements(STDOUT, statements)
 
-    # graph = to_graph(statements)
-    # dot = Graphs.to_dot(graph)
-    # open("graph.dot", "w") do f
-    #     write(f, dot)
-    # end
+    graph = to_graph(statements)
+    dot = Graphs.to_dot(graph)
+    open("graph.dot", "w") do f
+        write(f, dot)
+    end
 
     # Recover a structured control flow:
     statements, _ = raise_ast(statements)
@@ -342,16 +399,17 @@ function to_ispc(fragment, var_types, cnames, sizes)
 
     # Collect the indices to foreach statements:
     ast = collect_foreach_indices(ast)
+    # println(ast)
 
     # Emit ISPC code:
     ctx = EmitContext(var_types, cnames, sizes, Set())
 
-    code = try
-        emit_ispc(ast, ctx)
-    catch e
-       println(STDERR, ast)
-       rethrow(e)
-    end
+#    code = try
+    code = emit_ispc(ast, ctx)
+#    catch e
+#       println(STDERR, ast)
+#       rethrow(e)
+#    end
     return code
 end
 

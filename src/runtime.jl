@@ -22,7 +22,10 @@ function compile_functions(funcs, opts=``)
     end
 
     ispc_code = takebuf_string(code_io)
+
+    println("Compiling ISPC fragments:")
     println(ispc_code)
+    println(ispc_native(ispc_code, opts))
     
     lib = load_ispc(ispc_code, opts)
     for (idx, ispc_name) in func_symbols
@@ -68,7 +71,7 @@ function new_ispc_func(params, var_types, fragment, opts)
             push!(argexprs, sym)
             argument = [sym]
             # Also pass the array size(s):
-            for d in ndims(T)
+            for d in 1:ndims(T)
                 push!(argtypes, Int64)
                 push!(argexprs, :(size($sym, $d)))
                 size_var = Symbol("$(sym)__len__$(d)")

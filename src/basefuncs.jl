@@ -19,12 +19,9 @@ function openlibm_variants(pairs...)
         push!(result, ("$(func_name)f", "libopenlibm") => func_def)
     end
     result
-end    
+end
 
 basefuncs = Dict(
-
-    Base.arrayref => (array, I...) -> "$array[$(I...)]",
-    Base.arrayset => (array, value, I...) -> "$array[$(I...)] = $value;",
 
     Base.box => (typ, value) -> "$value",
     Base.sitofp => (typ, value) -> "(($typ)$value)",
@@ -40,6 +37,9 @@ basefuncs = Dict(
     Base.ceil => (value) -> "ceil($value)",
     Base.clamp => (val,min,max) -> "clamp($val,$min,$max)",
 
+    (*) => (a, b) -> "($a * $b)",
+    (-) => (a, b) -> "($a - $b)",
+    (+) => (a, b) -> "($a + $b)",
     (<) => (a, b) -> "($a < $b)",
     (!) => (a) -> "(!$a)",
 

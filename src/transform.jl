@@ -205,6 +205,9 @@ function raise_ast(statements, first=1, visited=Set(),
     while i <= length(statements)
         stmt = statements[i]
 
+        # println("@ $i, first: $first, visited: $visited")
+        # println("continue: $continue_to, break: $break_to")
+
         # Any convergent flow?
         # =============================
 
@@ -219,9 +222,18 @@ function raise_ast(statements, first=1, visited=Set(),
             # Don't enter until they have all been followed:
             if !(issubset(incoming, visited))
                 # flow has not reconverged yet.
+                # println("not converged.")
                 return body, i
             end
         end
+
+        if i == continue_to
+            # We're about to finish visiting a do-while block.
+            # Let the caller handle it:
+            return body, i
+        end
+    
+        # println("enter")
 
         if !isempty(loopback)
             # A future statement points back here, that must be a
@@ -320,6 +332,8 @@ function raise_ast(statements, first=1, visited=Set(),
                 push_visited!(visited, visitedB...)
                 push_visited!(visited, i)
 
+                # println("IF at $i converged to $tailsA, $tailsB")
+
                 # Build an `if` or `while` structured control flow:
                 stmt = raise_if_then_else(condition, ifthen, ifelse)
                 push!(body, stmt)
@@ -390,11 +404,12 @@ function collect_foreach_indices(expr::Expr)
         block = collect_foreach_indices(block)
         statements = block.args
         filter!(statements) do expr
-            if expr.head == :(=)
+            if isa(expr, Expr) && expr.head == :(=)
                 lhs, rhs = expr.args
                 if isa(rhs, Expr) && rhs.head == :call
                     if rhs.args[1] == GlobalRef(ISPC, :foreachindex)
-                        push!(iters, rhs.args[2] => lhs)
+                        idx = eval(rhs.args[2])
+                        push!(iters, arrays[idx] => lhs)
                         return false
                     end
                 end
