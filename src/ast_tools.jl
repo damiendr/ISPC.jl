@@ -30,6 +30,38 @@ function typed_ast(f::Function, argtype::Type{Tuple})
     ast_typed = ccall(:jl_uncompress_ast, Any, (Any,Any), f.code, ast)
 end
 
+function get_ast(linfo::LambdaStaticData, ast=linfo.ast)
+    if !isa(ast, Expr)
+        ast = ccall(:jl_uncompress_ast, Any, (Any,Any), linfo, ast)
+    end
+    ast::Expr
+end
+
+
+"""
+Performs type inference on a lambda AST.
+"""
+function typeinf(linfo::LambdaStaticData, argtypes::DataType=Tuple{})
+    (ast, ret_type) = Core.Inference.typeinf_uncached(linfo, argtypes, Base.svec())
+    get_ast(linfo, ast)
+end
+
+
+"""
+Sets the types of closed vars to those found in the given Dict.
+"""
+function set_closure_types!(linfo::LambdaStaticData,
+                            vartypes::Dict{Symbol, DataType})
+    # Make sure to uncompress the AST:
+    linfo.ast = get_ast(linfo)
+
+    # Set the types of outer variables:
+    closures = linfo.ast.args[2][2]
+    linfo.ast.args[2][2] = Any[Any[symbol, get(vartypes, symbol, typ), kind]
+                               for (symbol, typ, kind) in closures]
+    linfo
+end
+
 
 """
 Calls `func()` on every node in `expr`.

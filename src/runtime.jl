@@ -25,7 +25,7 @@ function compile_functions(funcs, opts=``)
 
     println("Compiling ISPC fragments:")
     println(ispc_code)
-    println(ispc_native(ispc_code, opts))
+#    println(ispc_native(ispc_code, opts))
     
     lib = load_ispc(ispc_code, opts)
     for (idx, ispc_name) in func_symbols
