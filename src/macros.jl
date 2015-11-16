@@ -122,6 +122,12 @@ macro kernel(args...)
         lambda, = args
         opts = :(``)
     end
+
+    # Generate a unique identifier for this kernel.
+    # Wrap it in a Val{} so that it can be used for
+    # multiple dispatch, and also to prevent it from
+    # being turned into a GlobalRef when the AST is
+    # lowered.
     identifier = Val{gensym()}
 
     # tree = lambda.args[2]
