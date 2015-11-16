@@ -43,6 +43,9 @@ basefuncs = Dict(
     (<) => (a, b) -> "($a < $b)",
     (!) => (a) -> "(!$a)",
 
+    Base.FastMath.sub_fast => (a,b) -> "($a - $b)",
+    Base.FastMath.add_fast => (a,b) -> "($a + $b)",
+
     fastmath_variants(
         "Base.min" => (a) -> "min($a)",
         "Base.max" => (a) -> "max($a)",

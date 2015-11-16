@@ -1,29 +1,43 @@
 
-"""
-Finds the symbols in `statements` that are defined outside of `range`.
-"""
-function extract_params(statements, range)
-    decls = Set()
-    for stmt in statements[range]
-        walk(stmt) do o
-            if isa(o, Expr) && o.head == :(=)
-                push!(decls, o.args[1])
-            end
-        end
-    end
+using Base.Meta
 
-    symbols = Set()
-    for stmt in statements[range]
-        walk(stmt) do o
-            if isa(o, SymbolNode)
-                if !(o.name in decls)
-                    push!(symbols, (o.name, o.typ))
-                end
+"""
+
+"""
+function make_ispc_main(func_lowered::Expr)
+    substitute(func_lowered) do expr
+#        println(expr)
+        if isa(expr, Expr) && expr.head == :call
+            func = expr.args[1]
+            if func == GlobalRef(ISPC, :ispc_fragment)
+                identifier, lambda, options = expr.args[2:end]
+
+                arg_names = lambda.ast.args[1]
+                captured = lambda.ast.args[2][2]
+                body = lambda.ast.args[3]
+
+                captured_names = [varinfo[1] for varinfo in captured]
+                kernel_argnames = Any[arg_names..., captured_names...]
+
+                println("Extracted fragment $identifier")
+                println("Arguments: $(kernel_argnames)")
+                println("Body: $(strip_lineno(body))")
+
+                # identifier is a Val{symbol}, unbox the symbol:
+                id = identifier.parameters[1]
+                ISPC.ispc_fragments[id] = lambda
+                ISPC.ispc_fragment_opts[id] = options
+
+                kernel_call = :(ISPC.call_fragment($identifier,
+                                                   $(kernel_argnames...)))
+                 # Don't forget we're dealing with lowered ASTs, expand:
+                return expand(kernel_call)
             end
         end
+        nothing
     end
-    [symbols...] # we need the ordering to be consistent from now on.
 end
+
 
 
 """
@@ -62,68 +76,3 @@ function ispc_ranges(statements)
     return ranges
 end
 
-
-"""
-Registers a new ISPC fragment.
-"""
-function add_ispc_function!(func_calls, identifier, func_def)
-    func_call = new_ispc_func(func_def...)
-    func_calls[identifier] = func_call
-end
-
-
-"""
-Extracts ISPC fragments in `body` and return a dict of ISPC functions.
-"""
-function extract_ispc(typed_ast, opts=``)
-    var_types = Dict()
-    local_vars = typed_ast.args[2][1]
-    env_vars = typed_ast.args[2][2]
-    gen_syms = typed_ast.args[2][3]
-    # Collate all type information into a single dict.
-    # (1) Local and closure vars:
-    for (symbol, typ, bits) in (local_vars..., env_vars...)
-        var_types[symbol] = typ
-    end
-    # (2) GenSym SSA targets:
-    for (i, typ) in enumerate(gen_syms)
-        var_types[GenSym(i-1)] = typ # remember GenSym() starts at 0
-    end
-
-    body = typed_ast.args[3]
-    statements = body.args
-
-    # Extract all top-level spans of ISPC code and replace them with
-    # calls to generated ISPC functions:
-    func_calls = Dict()
-    for (range, identifier) in ispc_ranges(statements)
-        if identifier == nothing; continue; end
-        # Find out which outer variables are used within that fragment,
-        # they will become arguments to the ISPC function:
-        params = extract_params(statements, range)
-        # Turn the fragment into an ISPC function:
-        fragment = statements[range]
-        add_ispc_function!(func_calls, identifier, (params, var_types, fragment, opts))
-    end
-    func_calls
-end
-
-"""
-Replaces ISPC fragments in `body` with calls to the corresponding
-ISPC call in `func_calls`.
-"""
-function replace_calls(body, func_calls)
-    if isa(body, Expr)
-        statements = copy(body.args)
-        for (range, identifier) in ispc_ranges(body.args)
-            if identifier == nothing; continue; end
-            func_call = func_calls[identifier]
-            statements[range] = nothing
-            statements[range.start] = func_call
-        end
-        filter!(o -> o != nothing, statements)
-        return Expr(body.head, [replace_calls(o, func_calls) for o in statements]...)
-    else
-        return body
-    end
-end

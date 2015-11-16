@@ -4,7 +4,9 @@
 Removes every `LineNumberNode` in the AST (eg. for clearer output).
 """
 function strip_lineno(expr::Expr)
-    return Expr(expr.head, strip_lineno(expr.args)...)
+    args = strip_lineno(expr.args)
+    newargs = map(strip_lineno, args)
+    return Expr(expr.head, newargs...)
 end
 
 function strip_lineno(array::Vector{Any})
@@ -13,6 +15,9 @@ function strip_lineno(array::Vector{Any})
     end
 end
 
+function strip_lineno(obj::Any)
+    obj
+end
 
 """
 Replaces all calls to `Base.box()` with the unboxed value.
@@ -222,16 +227,17 @@ function raise_ast(statements, first=1, visited=Set(),
             # Don't enter until they have all been followed:
             if !(issubset(incoming, visited))
                 # flow has not reconverged yet.
-                # println("not converged.")
+                # println("not converged at $i.")
                 return body, i
             end
         end
 
-        if i == continue_to
-            # We're about to finish visiting a do-while block.
-            # Let the caller handle it:
-            return body, i
-        end
+        # if i == continue_to
+        #     # We're about to finish visiting a do-while block.
+        #     # Let the caller handle it:
+        #     println("return to parent do-while at $i")
+        #     return body, i
+        # end
     
         # println("enter")
 
@@ -244,14 +250,17 @@ function raise_ast(statements, first=1, visited=Set(),
             if (continue_to, break_to) != (cont, brk)
                 # That's a new do-while block. Recurse with the new
                 # break/continue arguments:
+                # println("start do-while")
                 stmt, tail = raise_ast(statements, i, visited, graph,
                                        cont, brk)
                 push!(body, stmt...)
 
                 if tail != nothing
+                    # println("end do-while: continue $tail")
                     i = tail
                     continue
                 else
+                    # println("end do-while: return $brk")
                     return body, brk
                 end
             else
@@ -297,6 +306,11 @@ function raise_ast(statements, first=1, visited=Set(),
             condition, target = stmt.args
 
             if target < i
+                if target != first || i != continue_to
+                    # println("return to parent do-while at $i")
+                    return body, i
+                end
+
                 @assert target == first
                 # This is a `do-while` block. Its body is formed
                 # by all previous statements since the start of
@@ -371,6 +385,9 @@ function raise_ast(statements, first=1, visited=Set(),
     return body, nothing
 end
 
+function meta_to_trees(expr::Any)
+    expr
+end
 
 function meta_to_trees(expr::Expr)
     branches = []
@@ -378,7 +395,9 @@ function meta_to_trees(expr::Expr)
     for (range, identifier) in ispc_ranges(statements)
         # println("@ $range, $identifier")
         if identifier == nothing
-            append!(branches, statements[range])
+            for stmt in statements[range]
+                push!(branches, meta_to_trees(stmt))
+            end
         else
             meta = statements[range.start]
             @assert meta.head == :meta

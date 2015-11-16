@@ -49,17 +49,13 @@ inline unsigned int64 __not(unsigned int64 val) {return ~val;}
 
 """
 
-function gen_ispc_call(call_id, ret_type, arg_types, arg_symbols...)
-    quote
-        ccall(call_id, ret_type, arg_types, arg_symbols...)
-    end
-end
 
 immutable EmitContext
     types::Dict
     cnames::Dict
     sizes::Dict
     declared::Set
+    uniform::Bool
 end
 
 function indent(s::AbstractString)
@@ -222,6 +218,18 @@ function indexed_array(ctx::EmitContext, array, I...)
     return "$arr[$idx]"
 end
 
+function emit_ispc(head::Type{Val{:return}}, args, ctx::EmitContext)
+    if length(args) > 1
+        error("Multiple return values are not supported")
+    end
+    if args[1] == nothing
+        return """return;"""
+    else
+        carg = emit_ispc(arg, ctx)
+        return """return $carg;"""
+    end
+end
+
 function emit_ispc(head::Type{Val{:if}}, args, ctx::EmitContext)
     test = emit_ispc(args[1], ctx)
     then = args[2]
@@ -301,7 +309,9 @@ end
 
 function emit_ispc(head::Type{Val{:foreach}}, args, ctx::EmitContext)
     targets, block = args
-    body = indent(emit_ispc(block, ctx))
+    body_ctx = EmitContext(ctx.types, ctx.cnames, ctx.sizes,
+                            ctx.declared, false)
+    body = indent(emit_ispc(block, body_ctx))
 
     if length(targets) == 1 && targets[1].first == QuoteNode(:active)
         idx = ctx.cnames[targets[1].second]
@@ -350,37 +360,26 @@ function emit_ispc(head::Type{Val{:(=)}}, args, ctx::EmitContext)
     if !declared
         push!(ctx.declared, lhs)
         decl = to_c_type(ctx.types[lhs], cname)
-        return "$decl = $rhs_code;"
+        qual = ifelse(ctx.uniform, "uniform", "")
+        return "$qual $decl = $rhs_code;"
     else
         return "$cname = $rhs_code;"
     end
 end
 
 
-function gen_ispc_func(name, ret_type, body, arg_types, arg_symbols...)
-    c_ret_type = to_c_type(ret_type)
-    c_arg_types = map(to_c_type, arg_types, arg_symbols)
-    c_args = ["uniform $arg" for arg in c_arg_types]
-    c_args_decls = join(c_args, ", ")
-    return """
-    export $c_ret_type $name($c_args_decls) {
-    $body
-    }
-    """
-end
-
 import Graphs
 
-function to_ispc(fragment, var_types, cnames, sizes)
+function to_ispc(ast, var_types, cnames, sizes)
 
-    println(var_types)
+    # println(var_types)
 
     # Get rid of line number nodes:
-    fragment = strip_lineno(fragment)
+    ast = strip_lineno(ast)
 
     # Simplify jump analysis by replacing labels with direct indexing:
-    statements = labels_to_lines(fragment)
-    print_statements(STDOUT, statements)
+    statements = labels_to_lines(ast.args)
+    # print_statements(STDOUT, statements)
 
     graph = to_graph(statements)
     dot = Graphs.to_dot(graph)
@@ -402,7 +401,7 @@ function to_ispc(fragment, var_types, cnames, sizes)
     # println(ast)
 
     # Emit ISPC code:
-    ctx = EmitContext(var_types, cnames, sizes, Set())
+    ctx = EmitContext(var_types, cnames, sizes, Set(), true)
 
 #    code = try
     code = emit_ispc(ast, ctx)
@@ -414,13 +413,26 @@ function to_ispc(fragment, var_types, cnames, sizes)
 end
 
 
-function ispc_codegen(io, func::ISPCFunction)
+function gen_ispc_func(name, ret_type, body, arg_types, arg_symbols...)
+    c_ret_type = to_c_type(ret_type)
+    c_arg_types = map(to_c_type, arg_types, arg_symbols)
+    c_args = ["uniform $arg" for arg in c_arg_types]
+    c_args_decls = join(c_args, ", ")
+    return """
+    export $c_ret_type $name($c_args_decls) {
+    $body
+    }
+    """
+end
+
+
+function ispc_codegen!(func::ISPCFunction)
 
     sizes = Dict()
     argtypes = []
     argnames = []
-    for arg in func.signature
-        if isa(arg, Symbol)
+    for arg in func.arg_names
+        if isa(arg, Symbol) || isa(arg, Expr)
             push!(argnames, arg)
             push!(argtypes, func.var_types[arg])
         else
@@ -437,12 +449,12 @@ function ispc_codegen(io, func::ISPCFunction)
     cnames = substitute_identifiers(keys(func.var_types))
     argnames = [cnames[key] for key in argnames]
 
-    body = indent(to_ispc(func.fragment, func.var_types, cnames, sizes))
+    body = indent(to_ispc(func.ast, func.var_types, cnames, sizes))
 
-    func_name = "ispc_func_$(func.idx)"
-    func_code = gen_ispc_func(func_name, Void, body, argtypes, argnames...)
-    write(io, func_code)
-    return func_name
+    func.ispc_name = "ispc_func_$(func.idx)"
+    func.ispc_code = gen_ispc_func(func.ispc_name, Void, body,
+                                   argtypes, argnames...)
+    return func
 end
 
 """

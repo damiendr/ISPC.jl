@@ -25,7 +25,7 @@ end
 """
 Returns a typed AST for function `f`.
 """
-function typed_ast(f::Function, argtype::Type{Tuple})
+function get_typed_ast(f::Function, argtype::Type{Tuple})
     (ast, ret_type) = Core.Inference.typeinf(f.code, argtype, f.env)
     ast_typed = ccall(:jl_uncompress_ast, Any, (Any,Any), f.code, ast)
 end
@@ -37,12 +37,11 @@ function get_ast(linfo::LambdaStaticData, ast=linfo.ast)
     ast::Expr
 end
 
-
 """
 Performs type inference on a lambda AST.
 """
-function typeinf(linfo::LambdaStaticData, argtypes::DataType=Tuple{})
-    (ast, ret_type) = Core.Inference.typeinf_uncached(linfo, argtypes, Base.svec())
+function typeinf(linfo::LambdaStaticData, argtypes)
+    (ast, ret_type) = Core.Inference.typeinf_uncached(linfo, Tuple{argtypes...}, Base.svec())
     get_ast(linfo, ast)
 end
 
@@ -103,6 +102,12 @@ function substitute(subst::Function, obj::Any)
     else
         return obj
     end
+end
+
+function substitute(subst::Function, obj::LambdaStaticData)
+    new_obj = deepcopy(obj)
+    new_obj.ast = substitute(subst, get_ast(new_obj))
+    new_obj
 end
 
 function substitute(subst::Function, expr::Expr)

@@ -9,7 +9,7 @@ include("codegen.jl")
 include("transform.jl")
 include("extract.jl")
 include("macros.jl")
-export @foreach, @unmasked, @coherent, @ispc
+export @foreach, @unmasked, @coherent, @ispc, @kernel
 
 
 end # module
