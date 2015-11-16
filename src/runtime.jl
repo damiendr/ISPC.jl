@@ -27,7 +27,7 @@ function run_typeinf(linfo, argtypes)
 
     # Captured vars become arguments:
     # Unset the 'captured' flag 0x1 -- doesn't seem to matter, but...
-    arg_varinfos = [Any[name, typ, flags $ 0x1]
+    arg_varinfos = [Any[name, typ, flags & ~0x1]
                     for (name, typ, flags) in captured]
     local_vars = Any[linfo.ast.args[2][1]..., arg_varinfos...]
 
