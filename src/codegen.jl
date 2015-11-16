@@ -99,7 +99,7 @@ function emit_ispc(newvar::NewvarNode, ctx::EmitContext)
         prefix = string(newvar.name)
         for key in keys(ctx.cnames)
             if startswith(string(key), "##$(prefix)#")
-                println(STDERR, "Fixing $newvar => $key")
+                println(STDERR, "Guessing $newvar => $(NewvarNode(key))")
                 return emit_ispc(NewvarNode(key), ctx)
             end
         end
@@ -499,7 +499,7 @@ latex_symbols = Base.REPLCompletions.latex_symbols
 const unicode_names = Dict([reverse(p) for p in latex_symbols])
 const disallowed = r"[^a-zA-Z0-9_]"
 # this does not catch all cases but is enough when the input is
-# a valid Julia identifier (eg. no initial digit etc.)
+# already a valid Julia identifier (eg. no initial digit etc.)
 
 
 function gen_valid_identifier(s::ASCIIString)

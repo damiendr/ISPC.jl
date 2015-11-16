@@ -201,6 +201,17 @@ function raise_if_then_else(condition, ifthen, ifelse)
 end
 
 
+"""
+Transform unstructured control flow into structured statements.
+
+We make a number of assumptions about the control flow:
+- a backwards conditional jump always correspond
+  to the end of a loop
+- there are no unconditional backwards jumps.
+
+So far these assumptions seem to hold for everything that Julia
+generates.
+"""
 function raise_ast(statements, first=1, visited=Set(),
                     graph=to_graph(statements),
                     continue_to=nothing,
@@ -232,13 +243,6 @@ function raise_ast(statements, first=1, visited=Set(),
             end
         end
 
-        # if i == continue_to
-        #     # We're about to finish visiting a do-while block.
-        #     # Let the caller handle it:
-        #     println("return to parent do-while at $i")
-        #     return body, i
-        # end
-    
         # println("enter")
 
         if !isempty(loopback)
@@ -306,18 +310,21 @@ function raise_ast(statements, first=1, visited=Set(),
             condition, target = stmt.args
 
             if target < i
+                # This looks like the end of a do-while block...
+
                 if target != first || i != continue_to
+                    # ... but not of the one we're processing at
+                    # the moment! Let the caller handle it:
                     # println("return to parent do-while at $i")
                     return body, i
                 end
 
-                @assert target == first
-                # This is a `do-while` block. Its body is formed
-                # by all previous statements since the start of
-                # the current branch:
+                # The body is formed by all previous statements
+                # since the start of the current branch:
                 push_visited!(visited, i)
+
                 # We need to negate the condition to match do-while
-                # semantics:
+                # semantics (the goto statements form a do-while-not)
                 while_condition = :(!$condition)
                 stmt = Expr(:dowhile, while_condition, Expr(:block, body...))
                 return [stmt], break_to
