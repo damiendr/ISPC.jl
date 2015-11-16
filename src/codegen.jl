@@ -95,6 +95,14 @@ end
 function emit_ispc(newvar::NewvarNode, ctx::EmitContext)
     cname = get(ctx.cnames, newvar.name, nothing)
     if cname == nothing
+        println(STDERR, "Warning: encountered bug https://github.com/JuliaLang/julia/issues/12620 -- correctness is not guaranteed.")
+        prefix = string(newvar.name)
+        for key in keys(ctx.cnames)
+            if startswith(string(key), "##$(prefix)#")
+                println(STDERR, "Fixing $newvar => $key")
+                return emit_ispc(NewvarNode(key), ctx)
+            end
+        end
         return ""
     end
     decl = to_c_type(ctx.types[newvar.name], cname)
