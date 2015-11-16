@@ -23,7 +23,6 @@ function run_typeinf(linfo, argtypes)
     captured = linfo.ast.args[2][2]
     captured_names = [varinfo[1] for varinfo in captured]
     kernel_argnames = Any[arg_names..., captured_names...]
-    # local_vars = Any[Any[name, typ, 2] for (name, typ) in zip(kernel_argnames, args)]
 
     # Captured vars become arguments:
     # Unset the 'captured' flag 0x1 -- doesn't seem to matter, but...
@@ -46,8 +45,6 @@ end
 
     opts = eval(ispc_fragment_opts[id])
     println("Compile options: $opts")
-
-    # func = register_ispc_fragment!(ispc_fragments, opts)
 
     println("Running type inference...")
     linfo = ispc_fragments[id]
@@ -184,7 +181,8 @@ function register_ispc_fragment!(call_args, ast::Expr, opts::Cmd)
     end
 
     func_idx = length(ispc_funcs)+1
-    func = ISPCFunction(func_idx, arg_names, var_types, ast_body, "", "", opts, false)
+    func = ISPCFunction(func_idx, arg_names, var_types, ast_body,
+                        "", "", opts, false)
 
     ispc_codegen!(func)
 

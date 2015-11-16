@@ -85,6 +85,17 @@ macro coherent()
 end
 
 
+"""
+Marks a function that may contain ISPC kernels:
+
+@ispc function foo(...)
+    ...
+    @kernel() do
+        ...
+    end
+    ...
+end
+"""
 macro ispc(func::Expr)
     # Lower the function declaration:
     lowered = expand(func)
@@ -93,13 +104,17 @@ macro ispc(func::Expr)
     declarations = make_ispc_main(lowered)
 
     # extract_ispc() produces one or more top-level declarations:
-    sleep(0.1) # FIXME to prevent IJulia from messing up output
     ispc_esc(declarations)
-#    eval(declarations)
-#    nothing
 end
 
+"""
+Defines the entry point to an ISPC kernel.
+Must be used inside an @ispc function.
 
+@kernel([compile-opts]) do
+    ...
+end
+"""
 macro kernel(args...)
     if length(args) == 2
         lambda, opts = args
