@@ -2,11 +2,11 @@
 using Base.Meta
 
 """
-
+Finds ISPC kernel fragments in `func_lowered`, extracts them,
+and replaces them with calls to the compiled ISPC functions.
 """
 function make_ispc_main(func_lowered::Expr)
     substitute(func_lowered) do expr
-#        println(expr)
         if isa(expr, Expr) && expr.head == :call
             func = expr.args[1]
             if func == GlobalRef(ISPC, :ispc_fragment)
@@ -25,23 +25,27 @@ function make_ispc_main(func_lowered::Expr)
 
                 # identifier is a Val{symbol}, unbox the symbol:
                 id = identifier.parameters[1]
+
+                # Register the fragment:
                 ISPC.ispc_fragments[id] = lambda
                 ISPC.ispc_fragment_opts[id] = options
 
+                # Generate the corresponding call:
                 kernel_call = :(ISPC.call_fragment($identifier,
                                                    $(kernel_argnames...)))
+
                  # Don't forget we're dealing with lowered ASTs, expand:
                 return expand(kernel_call)
             end
         end
-        nothing
+        nothing # not matched, don't substitute
     end
 end
 
 
 
 """
-Finds the ranges of statements that correspond to ISPC fragments.
+Finds ranges of statements inside opening and closing ISPC tags.
 """
 function ispc_ranges(statements)
     ranges = []
