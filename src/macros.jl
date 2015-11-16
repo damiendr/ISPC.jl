@@ -32,6 +32,9 @@ macro foreach(func_expr, array_expr...)
         let $([:($a = ISPC.foreachindex($i, $s))
                     for (i, (s, a)) in enumerate(
                             zip(array_expr, signature.args))]...)
+            # We use the iteration expression as an argument to
+            # foreachindex() to pull the necessary variables into
+            # the closure. The :meta statement does not do that.
             $block
         end
         $(Expr(:meta, :ispc, foreach_id))
