@@ -1,17 +1,31 @@
 
+using DataStructures
+
+type ISPCFile
+    global_names::Set{ASCIIString}
+    func_ids::Vector{Int64}
+    compile_opts::Cmd
+    compiled::Bool
+    error::Bool
+end
+ISPCFile(opts::Cmd) = ISPCFile(Set{ASCIIString}(), Int64[], opts, false, false)
+
 type ISPCFunction
     idx::Integer
+
     arg_names::Vector{Any}
     var_types::Dict{Any,Any}
     ast::Expr
+
     ispc_name::ASCIIString
     ispc_code::ASCIIString
-    ispc_opts::Cmd
-    compile_failed::Bool
+
+    file::ISPCFile
 end
 
 const ispc_fptr = Array(Ptr{Void},0)
 const ispc_funcs = Array(ISPCFunction, 0)
+const ispc_files = Dict{Cmd, ISPCFile}()
 
 
 const ispc_fragments = Dict()
@@ -73,56 +87,64 @@ end
             $func_call
         end
     end
-    println("function kernel_call{$id}(::Type{Val{$id}}, args...)")
+    println("@generated function kernel_call{$id}(::Type{Val{$id}}, args...)")
     println(strip_lineno(body))
     body
 end
 
 
-using DataStructures
-
-function compile_functions(funcs, opts=``)
-    code_io = IOBuffer()
-    func_symbols = []
-    write(code_io, ispc_includes)
+function gen_code(funcs...)
+    io = IOBuffer()
+    write(io, ispc_includes)
+    write(io, "\n\n")
     for func in funcs
-        write(code_io, func.ispc_code)
-        push!(func_symbols, (func.idx, func.ispc_name))
+        write(io, func.ispc_code)
+        write(io, "\n")
+    end
+    takebuf_string(io)
+end
+
+
+function compile!(file)
+    if file.compiled
+        return
     end
 
-    ispc_code = takebuf_string(code_io)
+    # Generate the code for all the functions in the file:
+    funcs = [ispc_funcs[idx] for idx in file.func_ids]
+    ispc_code = gen_code(funcs...)
 
-    # println("Compiling ISPC fragments:")
+    println("Compiling ISPC file...")
     # println(ispc_code)
-#    println(ispc_native(ispc_code, opts))
-    
+
+    file.compiled = true
     try
-        lib = load_ispc(ispc_code, opts)
-        for (idx, ispc_name) in func_symbols
-            fptr = Libdl.dlsym(lib, ispc_name)
-            ispc_fptr[idx] = fptr
-        end
-    catch e
+        lib = load_ispc(ispc_code, file.compile_opts)
+        # Now set all the function pointers:
         for func in funcs
-            func.compile_failed = true
+            fptr = Libdl.dlsym(lib, func.ispc_name)
+            ispc_fptr[func.idx] = fptr
+            println("Loaded function $(func.ispc_name) at $fptr")
         end
-        rethrow(e)
+        file.error = false
+    catch e
+        println(STDERR, e)
+        file.error = true
     end
 end
 
 
 function compile_all()
-    # group the functions by compiler options:
-    funcs_by_opts = MultiDict()
-    for func in ispc_funcs
-        if UInt(ispc_fptr[func.idx]) == 0 && !func.compile_failed
-            push!(funcs_by_opts, func.ispc_opts => func)
-        end
+    # Compile all the open files
+    files = values(ispc_files)
+    for file in files
+        compile!(file)
     end
 
-    # compile each group of functions separately:
-    for (opts, funcs) in funcs_by_opts
-        compile_functions(funcs, opts)
+    for file in files
+        if file.error
+            error("Some files did not compile successfully")
+        end
     end
 end
 
@@ -180,16 +202,24 @@ function register_ispc_fragment!(call_args, ast::Expr, opts::Cmd)
         end
     end
 
+    # Get an ISPCFile to attach this function to.
+    file = get(ispc_files, opts, ISPCFile(opts))
+    if file.compiled
+        # That one was already compiled, start a new one:
+        file = ISPCFile(opts)
+    end
+    ispc_files[opts] = file
+
+    # Create the function object:
     func_idx = length(ispc_funcs)+1
     func = ISPCFunction(func_idx, arg_names, var_types, ast_body,
-                        "", "", opts, false)
-
-    ispc_codegen!(func)
-
-    println(func.ispc_code)
-
+                        "", "", file)
     push!(ispc_funcs, func)
     push!(ispc_fptr, Ptr{Void}(0))
+    push!(file.func_ids, func_idx)
+
+    # Generate the code:
+    ispc_codegen!(func)
 
     func_call = quote
         ccall(ISPC.ispc_fptr[$func_idx],

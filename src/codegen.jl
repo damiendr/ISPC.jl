@@ -1,5 +1,25 @@
 # ISPC code generation.
 
+
+@enum VARIABILITY unbound=1 uniform=2 variable=3
+const qualifiers = Dict(unbound=>"", uniform=>"uniform", variable=>"variable")
+
+immutable EmitContext
+    header::Vector{Any}
+    var_types::Dict
+    globals::Set
+    cnames::Dict
+    sizes::Dict
+    declared::Set
+    types::Dict
+    variability::VARIABILITY
+end
+
+function nested_contex(ctx::EmitContext, variability::VARIABILITY)
+    EmitContext(ctx.header, ctx.var_types, ctx.globals, ctx.cnames,
+                ctx.sizes, ctx.declared, ctx.types, variability)
+end
+
 const ispc_types = Dict(
     Void => "void",
     Bool => "bool",
@@ -15,25 +35,73 @@ const ispc_types = Dict(
     UInt8 => "unsigned int8",
 )
 
-function to_c_type(T, name="")
-    if issubtype(T, AbstractArray)
-        arg = to_c_type(eltype(T), name)
-        return "$arg[]"
+type CType
+    cname::ASCIIString
+    is_array::Bool
+    fields::Dict
+end
+
+function declare(ctype, cname, variability=unbound)
+    qualifier = qualifiers[variability]
+    suffix = ctype.is_array? "[]" : ""
+    return strip("$qualifier $(ctype.cname) $cname$suffix")
+end
+
+function get_ctype(T, ctx::EmitContext)
+    ctype = get(ctx.types, T, nothing)
+    if ctype == nothing
+        ctype = new_ctype(T, ctx)
+        ctx.types[T] = ctype
+    end
+    ctype
+end
+
+function new_ctype(T, ctx::EmitContext)
+    if T in keys(ispc_types)
+        # Some atomic types can be directly translated
+        # to ISPC types:
+        cname = ispc_types[T]
+        return CType(cname, false, Dict())
+    elseif length(T.types) > 1
+        # Composite type
+        return declare_struct(T, ctx)
+    elseif issubtype(T, DenseArray)
+        # check for DenseArray and not AbstractArray
+        # because that would pull in all indexable types
+        celtype = get_ctype(eltype(T), ctx)
+        return CType(celtype.cname, true, Dict())
     else
-        ctype = ispc_types[T]
-        return strip("$ctype $name")
+        error("Unsupported type $T")
     end
 end
 
+function declare_struct(typ, ctx::EmitContext)
+    # As a first-level identifier the type also needs a unique name:
+    substitute_identifiers([typ.name], ctx.cnames, globals=ctx.globals)
+    ctypename = ctx.cnames[typ.name]
+    push!(ctx.globals, ctypename)
+
+    field_decls = []
+    cfnames = substitute_identifiers(fieldnames(typ))
+    for (fname, ftype) in zip(fieldnames(typ), typ.types)
+        cfname = cfnames[fname]
+        cftype = get_ctype(ftype, ctx)
+        fdecl = declare(cftype, cfname)
+        push!(field_decls, "$fdecl;")
+    end
+
+    decl = """
+    struct $(ctypename) {
+    $(indent(field_decls))
+    };"""
+    push!(ctx.header, decl)
+
+    return CType(ctypename, false, cfnames)
+end
+
+# A number of definitions to accomodate some quirks in the generated
+# code.
 const ispc_includes = """
-// A number of definitions to accomodate some quirks in the generated
-// code.
-
-struct UnitRange {
-    const int64 start;
-    const int64 stop;
-};
-
 // Use ISPC's multiple dispatch capabilities to deal with the fact
 // that Julia uses the same function for bitwise and boolean NOT,
 // whereas the ~ operator in ISPC does not work on booleans:
@@ -46,24 +114,18 @@ inline unsigned int8 __not(unsigned int8 val) {return ~val;}
 inline unsigned int16 __not(unsigned int16 val) {return ~val;}
 inline unsigned int32 __not(unsigned int32 val) {return ~val;}
 inline unsigned int64 __not(unsigned int64 val) {return ~val;}
-
 """
 
-
-immutable EmitContext
-    types::Dict
-    cnames::Dict
-    sizes::Dict
-    declared::Set
-    uniform::Bool
+function indent(s::AbstractString)
+    indent(split(s, '\n'))
 end
 
-function indent(s::AbstractString)
-    join(["    " * line for line in split(s, '\n')], "\n")
+function indent(lines::AbstractArray)
+    join(["    " * string(line) for line in lines], "\n")
 end
 
 function emit_ispc(obj::Any, ctx::EmitContext)
-    error("Unhandled object: $obj ($(typeof(obj)))")
+    error("Unhandled object: $obj ($(typeof(obj))) $(sexpr(obj))")
 end
 
 function emit_ispc(num::Real, ctx::EmitContext)
@@ -92,24 +154,6 @@ function emit_ispc(node::QuoteNode, ctx::EmitContext)
     return node.value
 end
 
-function emit_ispc(newvar::NewvarNode, ctx::EmitContext)
-    cname = get(ctx.cnames, newvar.name, nothing)
-    if cname == nothing
-        println(STDERR, "Warning: encountered bug https://github.com/JuliaLang/julia/issues/12620 -- correctness is not guaranteed.")
-        prefix = string(newvar.name)
-        for key in keys(ctx.cnames)
-            if startswith(string(key), "##$(prefix)#")
-                println(STDERR, "Guessing $newvar => $(NewvarNode(key))")
-                return emit_ispc(NewvarNode(key), ctx)
-            end
-        end
-        return ""
-    end
-    decl = to_c_type(ctx.types[newvar.name], cname)
-    push!(ctx.declared, newvar.name)
-    return "$(decl);"
-end
-
 function emit_ispc(top::TopNode, ctx::EmitContext)
     error("Unhandled: $(sexpr(top))")
 end
@@ -118,8 +162,8 @@ function emit_ispc(ref::GlobalRef, ctx::EmitContext)
     return emit_ispc(eval(ref), ctx)
 end
 
-function emit_ispc(typ::Type, ctx::EmitContext)
-    return to_c_type(typ)
+function emit_ispc(typ::DataType, ctx::EmitContext)
+    return get_ctype(typ, ctx).cname
 end
 
 function emit_ispc(expr::Expr, ctx::EmitContext)
@@ -127,7 +171,14 @@ function emit_ispc(expr::Expr, ctx::EmitContext)
 end
 
 function emit_ispc(head::Any, args, ctx::EmitContext)
-    return "unsupported!!: $(sexpr(head)) $(sexpr(args))"
+    error("Unhandled expression $head $(sexpr(args))")
+end
+
+function emit_ispc(head::Type{Val{:new}}, args, ctx::EmitContext)
+    objtype = args[1]
+    values = args[2:end]
+    cargs = join([emit_ispc(val, ctx) for val in values], ", ")
+    return "{$cargs}"
 end
 
 function emit_ispc(head::Type{Val{:block}}, args, ctx::EmitContext)
@@ -170,13 +221,12 @@ function emit_ispc(head::Type{Val{:call}}, args, ctx::EmitContext)
         func = eval(f_expr)
     end
 
-    return emit_func_call(func, f_args, ctx)
-
-    # codegen_func = try
-    #     basefuncs[func]
-    # catch
-    #     error("Unhandled function $func from $(sexpr(args))")
-    # end
+    try
+        return emit_func_call(func, f_args, ctx)
+    catch e
+        println(STDERR, "Error translating function call to $func from $(sexpr(args))")
+        rethrow(e)
+    end
 
     # cargs = [emit_ispc(arg, ctx) for arg in f_args]
     # return codegen_func(cargs...)
@@ -188,11 +238,20 @@ function emit_func_call(f, args, ctx::EmitContext)
         return do_arrayref(ctx, args...)
     elseif f == Base.arrayset
         return do_arrayset(ctx, args...)
+    elseif f == Base.getfield
+        return do_getfield(ctx, args...)
     else
         fgen = basefuncs[f]
         fargs = [emit_ispc(arg, ctx) for arg in args]
         return fgen(fargs...)
     end
+end
+
+function do_getfield(ctx::EmitContext, obj, field::QuoteNode)
+    cobj = emit_ispc(obj, ctx)
+    ctype = get_ctype(ctx.var_types[obj], ctx)
+    cfield = ctype.fields[field.value]
+    return "$cobj.$cfield"
 end
 
 function col_major_index(sizes, indices)
@@ -317,8 +376,7 @@ end
 
 function emit_ispc(head::Type{Val{:foreach}}, args, ctx::EmitContext)
     targets, block = args
-    body_ctx = EmitContext(ctx.types, ctx.cnames, ctx.sizes,
-                            ctx.declared, false)
+    body_ctx = nested_contex(ctx, unbound)
     body = indent(emit_ispc(block, body_ctx))
 
     if length(targets) == 1 && targets[1].first == QuoteNode(:active)
@@ -367,18 +425,38 @@ function emit_ispc(head::Type{Val{:(=)}}, args, ctx::EmitContext)
     declared = lhs in ctx.declared
     if !declared
         push!(ctx.declared, lhs)
-        decl = to_c_type(ctx.types[lhs], cname)
-        qual = ifelse(ctx.uniform, "uniform", "")
-        return "$qual $decl = $rhs_code;"
+        ctype = get_ctype(ctx.var_types[lhs], ctx)
+        decl = declare(ctype, cname, ctx.variability)
+        return "$decl = $rhs_code;"
     else
         return "$cname = $rhs_code;"
     end
 end
 
 
+function emit_ispc(newvar::NewvarNode, ctx::EmitContext)
+    cname = get(ctx.cnames, newvar.name, nothing)
+    if cname == nothing
+        println(STDERR, "Warning: encountered bug https://github.com/JuliaLang/julia/issues/12620 -- correctness is not guaranteed.")
+        prefix = string(newvar.name)
+        for key in keys(ctx.cnames)
+            if startswith(string(key), "##$(prefix)#")
+                println(STDERR, "Guessing $newvar => $(NewvarNode(key))")
+                return emit_ispc(NewvarNode(key), ctx)
+            end
+        end
+        return ""
+    end
+    ctype = get_ctype(ctx.var_types[newvar.name], ctx)
+    decl = declare(ctype, cname, ctx.variability)
+    push!(ctx.declared, newvar.name)
+    return "$(decl);"
+end
+
+
 import Graphs
 
-function to_ispc(ast, var_types, cnames, sizes)
+function to_ispc(ast, ctx::EmitContext)
 
     # println(var_types)
 
@@ -409,7 +487,6 @@ function to_ispc(ast, var_types, cnames, sizes)
     # println(ast)
 
     # Emit ISPC code:
-    ctx = EmitContext(var_types, cnames, sizes, Set(), true)
 
 #    code = try
     code = emit_ispc(ast, ctx)
@@ -421,10 +498,13 @@ function to_ispc(ast, var_types, cnames, sizes)
 end
 
 
-function gen_ispc_func(name, ret_type, body, arg_types, arg_symbols...)
-    c_ret_type = to_c_type(ret_type)
-    c_arg_types = map(to_c_type, arg_types, arg_symbols)
-    c_args = ["uniform $arg" for arg in c_arg_types]
+function gen_ispc_func(ctx::EmitContext, name, ret_type, body, arg_types, arg_symbols...)
+    c_ret_type = get_ctype(ret_type, ctx).cname
+    c_args = []
+    for (argtype, argname) in zip(arg_types, arg_symbols)
+        carg = declare(get_ctype(argtype, ctx), ctx.cnames[argname], uniform)
+        push!(c_args, carg)
+    end
     c_args_decls = join(c_args, ", ")
     return """
     export $c_ret_type $name($c_args_decls) {
@@ -435,7 +515,6 @@ end
 
 
 function ispc_codegen!(func::ISPCFunction)
-
     sizes = Dict()
     argtypes = []
     argnames = []
@@ -454,24 +533,35 @@ function ispc_codegen!(func::ISPCFunction)
     end
 
     # Replace Julia identifier with C-compatible ones:
-    cnames = substitute_identifiers(keys(func.var_types))
-    argnames = [cnames[key] for key in argnames]
+    cnames = substitute_identifiers(keys(func.var_types),
+                                    globals=func.file.global_names)
 
-    body = indent(to_ispc(func.ast, func.var_types, cnames, sizes))
+    header = []
+    ctx = EmitContext(header, func.var_types, func.file.global_names,
+                        cnames, sizes, Set(), Dict(), uniform)
 
+    body = indent(to_ispc(func.ast, ctx))
+
+    io = IOBuffer()
+    for decl in ctx.header
+        write(io, decl)
+        write(io, "\n")
+    end
     func.ispc_name = "ispc_func_$(func.idx)"
-    func.ispc_code = gen_ispc_func(func.ispc_name, Void, body,
+    func_code = gen_ispc_func(ctx, func.ispc_name, Void, body,
                                    argtypes, argnames...)
-    return func
+    write(io, func_code)
+    write(io, "\n")
+    func.ispc_code = takebuf_string(io)
 end
+
+
 
 """
 Converts symbols to unique C-proof identifiers.
 """
-function substitute_identifiers(symbols)
+function substitute_identifiers(symbols, subst=Dict(); globals=Set())
     idx = 1
-    subst = Dict()
-    names = Set()
     for s in unique(symbols)
         if isa(s, GenSym)
             base = "_gensym$(s.id)"
@@ -479,11 +569,10 @@ function substitute_identifiers(symbols)
             base = gen_valid_identifier(string(s))
         end
         name = base
-        while name in names
+        while name in values(subst) || name in globals
             name = "$(base)_$(idx)"
             idx += 1
         end
-        push!(names, name)
         subst[s] = name
     end
     return subst
