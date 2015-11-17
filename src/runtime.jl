@@ -40,8 +40,8 @@ function run_typeinf(linfo, argtypes)
 end
 
 
-@generated function call_fragment{id}(::Type{Val{id}}, args...)
-    println("Generating fragment $id for argument types $args")
+@generated function kernel_call{id}(::Type{Val{id}}, args...)
+    println("Generating kernel $id for argument types $args")
 
     opts = eval(ispc_fragment_opts[id])
     println("Compile options: $opts")
@@ -51,7 +51,7 @@ end
     typed_ast = run_typeinf(linfo, args)
     print_lambda(strip_lineno(typed_ast))
 
-    # Register the new fragment:
+    # Register the new kernel:
     argexprs = [:(args[$i]) for i in 1:length(args)]
     func_call, func_idx = register_ispc_fragment!(argexprs, typed_ast, opts)
 
@@ -63,7 +63,7 @@ end
             if UInt(ISPC.ispc_fptr[$(func_idx)]) == 0
                 ISPC.compile_all()
                 if UInt(ISPC.ispc_fptr[$(func_idx)]) == 0
-                    error("Could not compile ISPC fragment $id")
+                    error("Could not compile ISPC kernel $id")
                 end
             end
             # Lazy compilation allows us to compile several fragments
@@ -73,7 +73,7 @@ end
             $func_call
         end
     end
-    println("function call_fragment{$id}(::Type{Val{$id}}, args...)")
+    println("function kernel_call{$id}(::Type{Val{$id}}, args...)")
     println(strip_lineno(body))
     body
 end

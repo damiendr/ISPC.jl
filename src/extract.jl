@@ -30,7 +30,7 @@ function make_ispc_main(func_lowered::Expr)
                 ISPC.ispc_fragment_opts[id] = options
 
                 # Generate the corresponding call:
-                kernel_call = :(ISPC.call_fragment($identifier,
+                kernel_call = :(ISPC.kernel_call($identifier,
                                                    $(kernel_argnames...)))
 
                  # Don't forget we're dealing with lowered ASTs, expand:
