@@ -25,7 +25,7 @@ end
 
 const ispc_fptr = Array(Ptr{Void},0)
 const ispc_funcs = Array(ISPCFunction, 0)
-const ispc_files = Dict{Cmd, ISPCFile}()
+const ispc_files = Dict{AbstractString, ISPCFile}()
 
 
 const ispc_fragments = Dict()
@@ -115,7 +115,7 @@ function compile!(file)
     ispc_code = gen_code(funcs...)
 
     println("Compiling ISPC file...")
-    # println(ispc_code)
+    println(ispc_code)
 
     file.compiled = true
     try
@@ -135,16 +135,18 @@ end
 
 
 function compile_all()
-    # Compile all the open files
-    files = values(ispc_files)
-    for file in files
+    error = false
+
+    # Compile all the open files:
+    for opts in keys(ispc_files)
+        file = ispc_files[opts]
         compile!(file)
+        delete!(ispc_files, opts)
+        error |= file.error
     end
 
-    for file in files
-        if file.error
-            error("Some files did not compile successfully")
-        end
+    if error
+        error("Some files did not compile successfully")
     end
 end
 
@@ -203,12 +205,12 @@ function register_ispc_fragment!(call_args, ast::Expr, opts::Cmd)
     end
 
     # Get an ISPCFile to attach this function to.
-    file = get(ispc_files, opts, ISPCFile(opts))
+    file = get(ispc_files, string(opts), ISPCFile(opts))
     if file.compiled
         # That one was already compiled, start a new one:
         file = ISPCFile(opts)
     end
-    ispc_files[opts] = file
+    ispc_files[string(opts)] = file # use string() because of issue #14030
 
     # Create the function object:
     func_idx = length(ispc_funcs)+1
