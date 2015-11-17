@@ -596,6 +596,8 @@ function gen_valid_identifier(s::ASCIIString)
 end
 
 function gen_valid_identifier(s::UTF8String)
+    # Replace all non-ascii characters with either the
+    # corresponding latex command, or an underscore:
     s2 = join(map(collect(s)) do c
         isascii(c) ? c : get(unicode_names, "$c", "_")
     end, "")
