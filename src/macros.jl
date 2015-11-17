@@ -140,7 +140,13 @@ macro kernel(args...)
     return ispc_esc(quote
         ISPC.ispc_kernel($identifier, $lambda, $opts)
     end)
-    # Note: `ISPC.ispc_kernel()` does not actually exist. It's
-    # just a tag that will be picked up when the kernels are
-    # extracted.
 end
+
+
+function ispc_kernel(args...)
+    # Note: this should not be called, it's just a tag that
+    # will be picked up when the kernels are extracted.
+    # Provide a helpful error message:
+    error("Functions containing ISPC kernels must be marked with @ispc")
+end
+

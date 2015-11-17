@@ -159,30 +159,31 @@ function push_visited!(s::Set, items...)
     end
 end
 
-function Base.isless(a::Int64, b::Void)
-    Base.show_backtrace(STDERR, backtrace())
-    error("$a, $b")
-end
 
+"""
+Try to lift patterns such as this:
+    if condition
+      do
+         block
+      while condition
+    end
+
+into a simpler form:
+    while condition
+       block
+    end
+    
+"""
 function raise_if_then_else(condition, ifthen, ifelse)
-    # Try to lift patterns such as this:
-    # if condition
-    #   do
-    #      block
-    #   while condition
-    # end
-    #
-    # into a simpler form:
-    # while condition
-    #    block
-    # end
     if length(ifthen) == 1 && length(ifelse) == 0
         expr, = ifthen
         if isa(expr, Expr) && expr.head == :dowhile
             docondition, doblock = expr.args
             # Test that the conditions match via their string representation.
             # Not the most elegant way but the most maintainable that I've
-            # found so far:
+            # found so far.
+            # They should be logically identical but differ syntactically by 
+            # a double negation:
             expected = ("!((Base.box)(Base.Bool,(Base.not_int)($condition)))",
                         "!((top(!))($condition))")
             if string(docondition) in expected
