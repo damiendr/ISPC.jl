@@ -73,7 +73,7 @@ end
             $func_call
         end
     end
-    println("@generated function call_fragment{$id}(args...)")
+    println("function call_fragment{$id}(::Type{Val{$id}}, args...)")
     println(strip_lineno(body))
     body
 end

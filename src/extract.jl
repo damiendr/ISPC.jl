@@ -2,14 +2,14 @@
 using Base.Meta
 
 """
-Finds ISPC kernel fragments in `func_lowered`, extracts them,
-and replaces them with calls to the compiled ISPC functions.
+Finds ISPC kernels in `func_lowered`, extracts them, and
+replaces them with calls to the compiled ISPC functions.
 """
 function make_ispc_main(func_lowered::Expr)
     substitute(func_lowered) do expr
         if isa(expr, Expr) && expr.head == :call
             func = expr.args[1]
-            if func == GlobalRef(ISPC, :ispc_fragment)
+            if func == GlobalRef(ISPC, :ispc_kernel)
                 identifier, lambda, options = expr.args[2:end]
 
                 arg_names = lambda.ast.args[1]
@@ -19,9 +19,8 @@ function make_ispc_main(func_lowered::Expr)
                 captured_names = [varinfo[1] for varinfo in captured]
                 kernel_argnames = Any[arg_names..., captured_names...]
 
-                println("Extracted fragment $identifier")
-                println("Arguments: $(kernel_argnames)")
-                println("Body: $(strip_lineno(body))")
+                println("Extracted kernel $identifier($((kernel_argnames...)))")
+                println(strip_lineno(body))
 
                 # identifier is a Val{symbol}, unbox the symbol:
                 id = identifier.parameters[1]

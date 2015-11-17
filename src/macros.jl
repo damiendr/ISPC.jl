@@ -103,7 +103,7 @@ macro ispc(func::Expr)
     # Lower the function declaration:
     lowered = expand(func)
 
-    # Extract all ISPC fragments and substitute with calls:
+    # Extract all ISPC kernels and substitute with calls:
     declarations = make_ispc_main(lowered)
 
     # extract_ispc() produces one or more top-level declarations:
@@ -138,9 +138,9 @@ macro kernel(args...)
     # push!(tree.args, Expr(:boundscheck, :pop))
 
     return ispc_esc(quote
-        ISPC.ispc_fragment($identifier, $lambda, $opts)
+        ISPC.ispc_kernel($identifier, $lambda, $opts)
     end)
-    # Note: `ISPC.ispc_fragment()` does not actually exist. It's
-    # just a tag that will be picked up when the fragments are
+    # Note: `ISPC.ispc_kernel()` does not actually exist. It's
+    # just a tag that will be picked up when the kernels are
     # extracted.
 end
