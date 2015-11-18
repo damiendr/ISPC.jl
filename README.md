@@ -4,6 +4,13 @@
 
 Tools & etc. to work with [Intel ISPC](http://ispc.github.io) from Julia.
 
+## Requirements
+
+- Julia 0.4 or 0.5-dev
+- `ispc` on the PATH
+- `libtool` or `g++` on the PATH
+- (optional) `llvm_dis` for looking at ISPC llvm assembly.
+
 ## High-level interface
 
 The high-level interface translates Julia code that has been annotated with
@@ -109,4 +116,4 @@ ccall(fptr, Void, (Ref{Float32}, Ref{Float32}, UInt64), vin, vout, length(vout))
 5. The lowered and typed `AST` is transformed to *un-lower* `goto`s back into `if`
    and `while` statements (ISPC does not support varying `goto`s)
 6. The transformed `AST` is translated to ISPC C
-7. The resulting code is compiled with `ispc`, loaded and called with `ccall`.
+7. The resulting code is compiled with `ispc`, loaded with `Libdl` and called with `ccall`.
