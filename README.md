@@ -10,6 +10,8 @@ The high-level interface translates Julia code that has been annotated with
 a set of macros into code compiled by ISPC on-the-fly. Example:
 
 ```julia
+using ISPC
+
 @inline function mandel(c_re, c_im, count)
     z_re = c_re
     z_im = c_im
