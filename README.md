@@ -7,8 +7,8 @@ Tools & etc. to work with [Intel ISPC](http://ispc.github.io) from Julia.
 ## Requirements
 
 - Julia 0.4 or 0.5-dev
-- `ispc` on the PATH
-- `libtool` or `g++` on the PATH
+- `ispc` (must be found in $PATH)
+- `libtool` or `g++` (must be found in $PATH)
 - (optional) `llvm_dis` for looking at ISPC llvm assembly.
 
 ## High-level interface
