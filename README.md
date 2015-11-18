@@ -119,7 +119,7 @@ ccall(fptr, Void, (Ref{Float32}, Ref{Float32}, UInt64), vin, vout, length(vout))
 4. When `kernel_call` is called for the first time, type inference is run on the
    kernel fragment. This gives us types for local variables and inlines functions
    that can be inlined.
-5. The lowered and typed `AST` is transformed to *un-lower* `goto`s back into `if`
+5. The lowered and typed AST is transformed to *un-lower* `goto`s back into `if`
    and `while` statements (ISPC does not support varying `goto`s)
-6. The transformed `AST` is translated to ISPC C
+6. The transformed AST is translated to ISPC C
 7. The resulting code is compiled with `ispc`, loaded with `Libdl` and called with `ccall`.
