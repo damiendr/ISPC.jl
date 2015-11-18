@@ -395,12 +395,12 @@ function emit_ispc(head::Type{Val{:foreach}}, args, ctx::EmitContext)
         if isa(object, SymbolNode)
             # It's an array symbol
             len = ctx.sizes[object.name][1]
-            push!(iters, "$idx = 0 ... $len")
+            push!(iters, "$idx = 1 ... ($len+1)")
         elseif isa(object, Expr) && object.head == :(:)
             # It's a literal range
             start = emit_ispc(object.args[1], ctx)
             stop = emit_ispc(object.args[2], ctx)
-            push!(iters, "$idx = $start ... $stop")
+            push!(iters, "$idx = $start ... ($stop+1)")
         else
             dump(object)
             error("unsupported iteration object: $object")
