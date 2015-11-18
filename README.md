@@ -56,6 +56,12 @@ end
 end;
 ```
 
+Supported ISPC constructs:
+- `@foreach`
+- `@foreach(:active)` (untested)
+- `@unmasked` (untested)
+- `@coherent` (untested)
+
 Not all of Julia's syntax and types are supported.
 
 - Arrays can only be indexed with integers and all outer
