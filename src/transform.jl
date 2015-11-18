@@ -38,7 +38,6 @@ function strip_box(obj)
 end
 
 
-
 """
 Returns the jump target if `stmt` is a branch, `nothing` otherwise.
 """
@@ -165,14 +164,14 @@ Try to lift patterns such as this:
     if condition
       do
          block
-      while condition
+      while !!condition
     end
 
 into a simpler form:
     while condition
        block
     end
-    
+
 """
 function raise_if_then_else(condition, ifthen, ifelse)
     if length(ifthen) == 1 && length(ifelse) == 0

@@ -276,9 +276,11 @@ function indexed_array(ctx::EmitContext, array, I...)
     arr = emit_ispc(array, ctx)
     sizes = ctx.sizes[array.name]
     if length(I) == 1
-        idx, = emit_ispc(I, ctx)
+        iexpr = :($(I[1]) - 1)
+        idx = emit_ispc(iexpr, ctx)
     elseif length(I) == length(sizes)
-        idx = emit_ispc(col_major_index(sizes, I), ctx)
+        indices = [:($i-1) for i in I]
+        idx = emit_ispc(col_major_index(sizes, indices), ctx)
     else
         error("There must be either one index or as many as dimensions")
     end
