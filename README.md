@@ -53,6 +53,10 @@ primitive types.
 - Simple composite types like `UnitRange` are supported inside kernels
 (eg. in `for` loops) but not as kernel arguments at the moment.
 
+- Only functions that have a direct translation to ISPC are supported 
+inside kernels. User-defined functions may be used if they are declared
+`@inline`.
+
 Work in progress, expect bugs and missing math functions. More documentation to
 come.
 
