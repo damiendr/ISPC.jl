@@ -72,7 +72,7 @@ export void simple(uniform float vin[], uniform float vout[],
 
 # Compile the code and get a function pointer to our kernel:
 lib = load_ispc(code, `--target=avx1-i32x8`)
-fptr = fptr = Libdl.dlsym(lib, "simple")
+fptr = Libdl.dlsym(lib, "simple")
 
 # Call the kernel:
 vin = rand(Float32, 1000);
