@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/damiendr/ISPC.jl.svg?branch=master)](https://travis-ci.org/damiendr/ISPC.jl)
 
-Tools & etc. to work with ISPC from Julia.
+Tools & etc. to work with [Intel ISPC](http://ispc.github.io) from Julia.
 
 ## High-level interface
 
@@ -95,3 +95,18 @@ vin = rand(Float32, 1000);
 vout = zeros(Float32, 1000);
 ccall(fptr, Void, (Ref{Float32}, Ref{Float32}, UInt64), vin, vout, length(vout))
 ```
+
+## How it works
+
+1. The `@kernel` macro creates a lambda function containing the kernel code.
+2. `code_lowered` is run on the main `@ispc` function to get information about
+   closure variables captured by the kernel lambda. These become kernel arguments.
+3. Kernel fragments in the main function are replaced by calls to a `@generated`
+   `kernel_call` function.
+4. When `kernel_call` is called for the first time, type inference is run on the
+   kernel fragment. This gives us types for local variables and inlines functions
+   that can be inlined.
+5. The lowered and typed `AST` is transformed to *un-lower* `goto`s back into `if`
+   and `while` statements (ISPC does not support varying `goto`s)
+6. The transformed `AST` is translated to ISPC C
+7. The resulting code is compiled with `ispc`, loaded and called with `ccall`.
