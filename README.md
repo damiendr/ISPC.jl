@@ -16,6 +16,8 @@ Tools & etc. to work with [Intel ISPC](http://ispc.github.io) from Julia.
 *Work in progress, expect bugs and missing math functions. More documentation to
 come.*
 
+See the [example notebook](https://github.com/damiendr/ISPC.jl/blob/master/examples/ISPC-mandelbrot.ipynb) for an overview.
+
 The high-level interface translates Julia code that has been annotated with
 a set of macros into code compiled by ISPC on-the-fly. Example:
 
@@ -74,8 +76,6 @@ primitive types.
 - Only functions that have a direct translation to ISPC are supported 
 inside kernels. User-defined functions may be used if they are declared
 `@inline`.
-
-See the [example notebook](https://github.com/damiendr/ISPC.jl/blob/master/examples/ISPC-mandelbrot.ipynb) for an overview.
 
 ## Low-level interface
 
