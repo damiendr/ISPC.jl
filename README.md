@@ -46,11 +46,11 @@ end;
 
 Not all of Julia's syntax and types are supported.
 
-In particular arrays can only be indexed with integers and all outer
+- Arrays can only be indexed with integers and all outer
 variables ("kernel arguments") must be primitive types or arrays of
 primitive types.
 
-Simple composite types like `UnitRange` are supported inside kernels
+- Simple composite types like `UnitRange` are supported inside kernels
 (eg. in `for` loops) but not as kernel arguments at the moment.
 
 Work in progress, expect bugs and missing math functions. More documentation to
