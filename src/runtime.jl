@@ -223,7 +223,7 @@ function register_ispc_fragment!(call_args, modified, ast::Expr, opts::Cmd)
             if func_arg in modified
                 # pass-by-reference
                 ref = gensym("ref")
-                push!(pass_by_ref, (ref, Ref{T}, call_arg))
+                push!(pass_by_ref, (ref, T, call_arg))
                 push!(arg_types, Ref{T})
                 push!(arg_values, ref)
             else
@@ -254,20 +254,24 @@ function register_ispc_fragment!(call_args, modified, ast::Expr, opts::Cmd)
     push!(ispc_fptr, Ptr{Void}(0))
     push!(file.func_ids, func_idx)
 
-    # Generate the code:
+    # Generate the kernel's ISPC code:
     ispc_codegen!(func)
 
-    wrap_refs = [:($ref = $reftype($val))
-                   for (ref, reftype, val) in pass_by_ref]
+    # Wrap all pass-by-reference arguments in Refs before
+    # the call:
+    wrap_refs = [:($ref = Ref{$T}($val))
+                   for (ref, T, val) in pass_by_ref]
 
+    # ... and return the modified value afterwards:
     unwrap_refs = [:($ref.x)
-                   for (ref, reftype, val) in pass_by_ref]
+                   for (ref, T, val) in pass_by_ref]
     if isempty(unwrap_refs)
         ret = :(return)
     else
         ret = :(return $((unwrap_refs...,)))
     end
 
+    # Ready! Let's put it all together:
     func_call = quote
         $(wrap_refs...)
         ccall(ISPC.ispc_fptr[$func_idx],
