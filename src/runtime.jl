@@ -232,7 +232,7 @@ function register_ispc_fragment!(call_args, modified, ast::Expr, opts::Cmd)
                 push!(arg_values, call_arg)
             end
             push!(arg_names, func_arg)
-            
+
         else
             error("Unsupported type: $T")
         end
@@ -262,12 +262,17 @@ function register_ispc_fragment!(call_args, modified, ast::Expr, opts::Cmd)
 
     unwrap_refs = [:($ref.x)
                    for (ref, reftype, val) in pass_by_ref]
+    if isempty(unwrap_refs)
+        ret = :(return)
+    else
+        ret = :(return $((unwrap_refs...,)))
+    end
 
     func_call = quote
         $(wrap_refs...)
         ccall(ISPC.ispc_fptr[$func_idx],
             Void, ($(arg_types...),), $(arg_values...))
-        return $((unwrap_refs...,))
+        $ret
     end
     func_call, func_idx
 end
