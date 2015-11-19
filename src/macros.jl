@@ -133,7 +133,10 @@ macro kernel(args...)
     # lowered.
     identifier = Val{gensym()}
 
-    # tree = lambda.args[2]
+    # Kernels don't return anything:
+    tree = lambda.args[2]
+    push!(tree.args, :nothing)
+
     # insert!(tree.args, 1, Expr(:boundscheck, false))
     # push!(tree.args, Expr(:boundscheck, :pop))
 

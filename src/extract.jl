@@ -16,10 +16,21 @@ function make_ispc_main(func_lowered::Expr)
                 captured = lambda.ast.args[2][2]
                 body = lambda.ast.args[3]
 
-                captured_names = [varinfo[1] for varinfo in captured]
-                kernel_argnames = Any[arg_names..., captured_names...]
+                # Find out which arguments are modified by the
+                # kernel call:
+                modified = []
+                kernel_argnames = Any[arg_names...]
+                for (name, typ, flags) in captured
+                    push!(kernel_argnames, name)
+                    if (flags & 0x4) != 0
+                        # Fortunately, this is already set after lowering,
+                        # before type inference.
+                        push!(modified, name)
+                    end
+                end
 
                 println("Extracted kernel $identifier($((kernel_argnames...)))")
+                println("Modified arguments: $((modified...))")
                 println(strip_lineno(body))
 
                 # identifier is a Val{symbol}, unbox the symbol:
@@ -29,12 +40,20 @@ function make_ispc_main(func_lowered::Expr)
                 ISPC.ispc_fragments[id] = lambda
                 ISPC.ispc_fragment_opts[id] = options
 
-                # Generate the corresponding call:
-                kernel_call = :(ISPC.kernel_call($identifier,
-                                                   $(kernel_argnames...)))
-
+                # Generate the corresponding call.
                  # Don't forget we're dealing with lowered ASTs, expand:
-                return expand(kernel_call)
+                kernel_call = expand(:(ISPC.kernel_call($identifier,
+                                             $((kernel_argnames...,)))))
+
+                # Don't forget to handle any returned values:
+                if isempty(modified)
+                    return kernel_call
+                else
+                    return :(
+                        $(modified...) = $kernel_call
+                    )
+                end
+
             end
         end
         nothing # not matched, don't substitute

@@ -15,6 +15,7 @@ type ISPCFunction
 
     arg_names::Vector{Any}
     var_types::Dict{Any,Any}
+    modified::Set
     ast::Expr
 
     ispc_name::ASCIIString
@@ -38,9 +39,12 @@ function run_typeinf(linfo, argtypes)
     captured_names = [varinfo[1] for varinfo in captured]
     kernel_argnames = Any[arg_names..., captured_names...]
 
-    # Captured vars become arguments:
-    # Unset the 'captured' flag 0x1 -- doesn't seem to matter, but...
-    arg_varinfos = [Any[name, typ, flags & ~0x1]
+    # Captured vars become arguments.
+    # Unset the flags that applied to closure vars and do not
+    # apply any more now that they're function arguments:
+    # - 0x1 ('captured') -- does not seem to matter
+    # - 0x4 ('assigned by inner function') -- would break type inference
+    arg_varinfos = [Any[name, typ, flags & ~0x5]
                     for (name, typ, flags) in captured]
     local_vars = Any[linfo.ast.args[2][1]..., arg_varinfos...]
 
@@ -60,14 +64,25 @@ end
     opts = eval(ispc_fragment_opts[id])
     println("Compile options: $opts")
 
-    println("Running type inference...")
+    # Collect the modified arguments *before* type inference,
+    # because we'll need to remove that information in order
+    # for type inference to run correctly:
     linfo = ispc_fragments[id]
+    modified = Set()
+    for (name, typ, flags) in linfo.ast.args[2][2]
+        if (flags & 0x4) != 0
+            push!(modified, name)
+        end
+    end
+
+    println("Running type inference...")
     typed_ast = run_typeinf(linfo, args)
     print_lambda(strip_lineno(typed_ast))
 
     # Register the new kernel:
     argexprs = [:(args[$i]) for i in 1:length(args)]
-    func_call, func_idx = register_ispc_fragment!(argexprs, typed_ast, opts)
+    func_call, func_idx = register_ispc_fragment!(argexprs,
+                                            modified, typed_ast, opts)
 
     # Generate the main body:
     body = quote
@@ -151,7 +166,7 @@ function compile_all()
 end
 
 
-function register_ispc_fragment!(call_args, ast::Expr, opts::Cmd)
+function register_ispc_fragment!(call_args, modified, ast::Expr, opts::Cmd)
 
     ast_args = ast.args[1]
     ast_body = ast.args[3]
@@ -161,7 +176,7 @@ function register_ispc_fragment!(call_args, ast::Expr, opts::Cmd)
 
     # Local variables:
     local_vars = ast.args[2][1]
-    for (name, typ, flag) in local_vars
+    for (name, typ, flags) in local_vars
         var_types[name] = typ
     end
 
@@ -175,6 +190,8 @@ function register_ispc_fragment!(call_args, ast::Expr, opts::Cmd)
     arg_values = [] # ccall argument values
     arg_names = [] # function argument names
 
+    pass_by_ref = []
+
     for (func_arg, call_arg) in zip(ast_args, call_args)
         T = var_types[func_arg]
         E = eltype(T)
@@ -182,6 +199,10 @@ function register_ispc_fragment!(call_args, ast::Expr, opts::Cmd)
             error("Unsupported non-isbits() type: $E")
         end
         if E != T
+            if func_arg in modified
+                error("Can't reassign arrays inside kernels: $func_arg")
+            end
+
             # We have an array type, pass it as a ref:
             push!(arg_types, Ref{E})
             push!(arg_values, call_arg)
@@ -198,8 +219,17 @@ function register_ispc_fragment!(call_args, ast::Expr, opts::Cmd)
             push!(arg_names, argument)
         else
             # Atomic isbits type:
-            push!(arg_types, T)
-            push!(arg_values, call_arg)
+            if func_arg in modified
+                # pass-by-reference
+                ref = gensym("ref")
+                push!(pass_by_ref, (ref, Ref{T}, call_arg))
+                push!(arg_types, Ref{T})
+                push!(arg_values, ref)
+            else
+                # pass-by-value
+                push!(arg_types, T)
+                push!(arg_values, call_arg)
+            end
             push!(arg_names, func_arg)
         end
     end
@@ -214,8 +244,8 @@ function register_ispc_fragment!(call_args, ast::Expr, opts::Cmd)
 
     # Create the function object:
     func_idx = length(ispc_funcs)+1
-    func = ISPCFunction(func_idx, arg_names, var_types, ast_body,
-                        "", "", file)
+    func = ISPCFunction(func_idx, arg_names, var_types, modified,
+                        ast_body, "", "", file)
     push!(ispc_funcs, func)
     push!(ispc_fptr, Ptr{Void}(0))
     push!(file.func_ids, func_idx)
@@ -223,11 +253,18 @@ function register_ispc_fragment!(call_args, ast::Expr, opts::Cmd)
     # Generate the code:
     ispc_codegen!(func)
 
+    wrap_refs = [:($ref = $reftype($val))
+                   for (ref, reftype, val) in pass_by_ref]
+
+    unwrap_refs = [:($ref.x)
+                   for (ref, reftype, val) in pass_by_ref]
+
     func_call = quote
+        $(wrap_refs...)
         ccall(ISPC.ispc_fptr[$func_idx],
             Void, ($(arg_types...),), $(arg_values...))
+        return $((unwrap_refs...,))
     end
     func_call, func_idx
 end
-
 

@@ -7,6 +7,7 @@ const qualifiers = Dict(unbound=>"", uniform=>"uniform", variable=>"variable")
 immutable EmitContext
     header::Vector{Any}
     var_types::Dict
+    modified::Set
     globals::Set
     cnames::Dict
     sizes::Dict
@@ -16,8 +17,9 @@ immutable EmitContext
 end
 
 function nested_contex(ctx::EmitContext, variability::VARIABILITY)
-    EmitContext(ctx.header, ctx.var_types, ctx.globals, ctx.cnames,
-                ctx.sizes, ctx.declared, ctx.types, variability)
+    EmitContext(ctx.header, ctx.var_types, ctx.modified,
+                ctx.globals, ctx.cnames, ctx.sizes,
+                ctx.declared, ctx.types, variability)
 end
 
 const ispc_types = Dict(
@@ -41,10 +43,10 @@ type CType
     fields::Dict
 end
 
-function declare(ctype, cname, variability=unbound)
+function declare(ctype, cname, variability=unbound, prefix="")
     qualifier = qualifiers[variability]
     suffix = ctype.is_array? "[]" : ""
-    return strip("$qualifier $(ctype.cname) $cname$suffix")
+    return strip("$qualifier $(ctype.cname) $prefix$cname$suffix")
 end
 
 function get_ctype(T, ctx::EmitContext)
@@ -126,6 +128,10 @@ end
 
 function emit_ispc(obj::Any, ctx::EmitContext)
     error("Unhandled object: $obj ($(typeof(obj))) $(sexpr(obj))")
+end
+
+function emit_ispc(obj::Void, ctx::EmitContext)
+    ""
 end
 
 function emit_ispc(num::Real, ctx::EmitContext)
@@ -294,7 +300,7 @@ function emit_ispc(head::Type{Val{:return}}, args, ctx::EmitContext)
     if args[1] == nothing
         return """return;"""
     else
-        carg = emit_ispc(arg, ctx)
+        carg = emit_ispc(args[1], ctx)
         return """return $carg;"""
     end
 end
@@ -504,7 +510,8 @@ function gen_ispc_func(ctx::EmitContext, name, ret_type, body, arg_types, arg_sy
     c_ret_type = get_ctype(ret_type, ctx).cname
     c_args = []
     for (argtype, argname) in zip(arg_types, arg_symbols)
-        carg = declare(get_ctype(argtype, ctx), ctx.cnames[argname], uniform)
+        prefix = argname in ctx.modified ? "&" : ""
+        carg = declare(get_ctype(argtype, ctx), ctx.cnames[argname], uniform, prefix)
         push!(c_args, carg)
     end
     c_args_decls = join(c_args, ", ")
@@ -539,8 +546,10 @@ function ispc_codegen!(func::ISPCFunction)
                                     globals=func.file.global_names)
 
     header = []
-    ctx = EmitContext(header, func.var_types, func.file.global_names,
-                        cnames, sizes, Set(), Dict(), uniform)
+    declared = Set(argnames)
+    ctx = EmitContext(header, func.var_types, func.modified,
+                        func.file.global_names, cnames, sizes,
+                        declared, Dict(), uniform)
 
     body = indent(to_ispc(func.ast, ctx))
 
