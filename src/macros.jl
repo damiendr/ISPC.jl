@@ -2,6 +2,7 @@
 
 using Base.Meta
 
+
 function ispc_esc(expr)
     # All ISPC entry points are escaped as @fastmath.
     # This is to prevent Julia from inserting a number of runtime
@@ -11,6 +12,7 @@ function ispc_esc(expr)
     # compiled with the '--fastmath' option!
     return Base.FastMath.make_fastmath(esc(expr))
 end
+
 
 """
 The ISPC `foreach` construct:
@@ -109,6 +111,7 @@ macro ispc(func::Expr)
     # extract_ispc() produces one or more top-level declarations:
     ispc_esc(declarations)
 end
+
 
 """
 Defines the entry point to an ISPC kernel.

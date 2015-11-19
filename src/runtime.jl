@@ -198,7 +198,7 @@ function register_ispc_fragment!(call_args, modified, ast::Expr, opts::Cmd)
         if !(isbits(E))
             error("Unsupported non-isbits() type: $E")
         end
-        if E != T
+        if issubtype(T, DenseArray)
             if func_arg in modified
                 error("Can't reassign arrays inside kernels: $func_arg")
             end
@@ -217,7 +217,8 @@ function register_ispc_fragment!(call_args, modified, ast::Expr, opts::Cmd)
                 push!(argument, size_var)
             end
             push!(arg_names, argument)
-        else
+
+        elseif E == T
             # Atomic isbits type:
             if func_arg in modified
                 # pass-by-reference
@@ -231,6 +232,9 @@ function register_ispc_fragment!(call_args, modified, ast::Expr, opts::Cmd)
                 push!(arg_values, call_arg)
             end
             push!(arg_names, func_arg)
+            
+        else
+            error("Unsupported type: $T")
         end
     end
 
