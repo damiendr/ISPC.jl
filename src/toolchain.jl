@@ -20,12 +20,14 @@ function ispc_llvm(code, options=``, llvm_dis="/usr/local/opt/llvm/bin/llvm-dis"
 end
 
 # Detect how to link a shared library:
-libtool = strip(readall(`which libtool`))
-if libtool != ""
+@osx_only begin
+    libtool = "/usr/bin/libtool"
     println("Linker: $libtool")
     link(objfile, libfile) = run(
         `$libtool -dynamic -o "$libfile" "$objfile"`)
-else
+end
+
+@linux_only begin
     gpp = strip(readall(`which g++`))
     gpp == "" && error("libtool or g++ is required")
     println("Linker: $gpp")
