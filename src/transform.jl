@@ -22,19 +22,17 @@ end
 """
 Replaces all calls to `Base.box()` with the unboxed value.
 """
-function strip_box(obj)
-    if isa(obj, Expr)
-        if obj.head == :call
-            # Unbox all values:
-            if obj.args[1] == GlobalRef(Base, :box)
-                # args[3] holds the boxed value:
-                obj = obj.args[3]
-            end
+strip_box(obj::Any) = obj
+function strip_box(expr::Expr)
+    if expr.head == :call
+        # Unbox all values:
+        if expr.args[1] == GlobalRef(Base, :box)
+            # args[3] holds the boxed value:
+            return strip_box(expr.args[3])
         end
-        args = map(strip_box, obj.args)
-        return Expr(obj.head, args...)
     end
-    return obj
+    args = map(strip_box, expr.args)
+    return Expr(expr.head, args...)
 end
 
 
@@ -427,6 +425,11 @@ function collect_foreach_indices(expr::Expr)
     if expr.head == :foreach
         iters = []
         arrays, block = args
+        # for arr in arrays
+        #     if isa(arr, Expr) && arr.head == :quote
+        #         push!(iters, arr.args[1])
+        #     end
+        # end
         block = collect_foreach_indices(block)
         statements = block.args
         filter!(statements) do expr

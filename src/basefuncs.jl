@@ -23,12 +23,16 @@ end
 
 basefuncs = Dict(
 
+    Base.FastMath.box => (typ, value) -> "$value",
     Base.box => (typ, value) -> "$value",
     Base.sitofp => (typ, value) -> "(($typ)$value)",
     Base.fptosi => (typ, value) -> "(($typ)$value)",
+    Base.uitofp => (typ, value) -> "(($typ)$value)",
+    Base.fptoui => (typ, value) -> "(($typ)$value)",
     Base.checked_trunc_sint => (typ, value) -> "(($typ)$value)",
     Base.fpext => (typ, value) -> "(($typ)$value)",
     Base.fptrunc => (typ, value) -> "(($typ)$value)",
+    Base.sext_int => (typ, value) -> "(($typ)$value)",
     Base.convert => (typ, value) -> "(($typ)$value)",
     Base.typeassert => (value, typ) -> "$value",
 
@@ -49,6 +53,8 @@ basefuncs = Dict(
 
     Base.FastMath.sub_fast => (a,b) -> "($a - $b)",
     Base.FastMath.add_fast => (a,b) -> "($a + $b)",
+    Base.FastMath.mul_fast => (a,b) -> "($a * $b)",
+    Base.FastMath.div_fast => (a,b) -> "($a / $b)",
 
     fastmath_variants(
         "Base.min" => (a) -> "min($a)",

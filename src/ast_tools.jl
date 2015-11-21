@@ -127,3 +127,32 @@ function sexpr(obj)
     takebuf_string(io)
 end
 
+
+function rename_fdef(func)
+    funcname = func.args[1].args[1]
+    argspec = func.args[1].args[2:end]
+    body = func.args[2]
+    if isa(funcname, Expr) && funcname.head == :curly
+        newsym = gensym(funcname.args[1])
+        newname = Expr(:curly, newsym, funcname.args[2:end]...)
+    elseif isa(funcname, Symbol)
+        newsym = gensym(funcname)
+        newname = newsym
+    else
+        error("Couldn't parse function name: $funcname")
+    end
+    stageddef = Expr(func.head, Expr(:call, newname, argspec...), body)
+#    stagedcall = Expr(:call, newsym, argspec...)
+    return newsym, stageddef
+end
+
+function get_argname(e::Expr)
+    if e.head == :(::)
+        return e.args[1]
+    elseif e.head == :kw
+        return e.args[1]
+    end
+    error("argname($(sexpr(e))")
+end
+get_argname(s::Symbol) = s
+

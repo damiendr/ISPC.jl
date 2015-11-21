@@ -14,12 +14,19 @@ immutable EmitContext
     declared::Set
     types::Dict
     variability::VARIABILITY
+    loc_info::AbstractString
 end
 
 function nested_contex(ctx::EmitContext, variability::VARIABILITY)
     EmitContext(ctx.header, ctx.var_types, ctx.modified,
                 ctx.globals, ctx.cnames, ctx.sizes,
-                ctx.declared, ctx.types, variability)
+                ctx.declared, ctx.types, variability, ctx.loc_info)
+end
+
+function with_loc_info(ctx::EmitContext, info::AbstractString)
+    EmitContext(ctx.header, ctx.var_types, ctx.modified,
+                ctx.globals, ctx.cnames, ctx.sizes,
+                ctx.declared, ctx.types, ctx.variability, info)
 end
 
 const ispc_types = Dict(
@@ -46,7 +53,13 @@ end
 function declare(ctype, cname, variability=unbound, prefix="")
     qualifier = qualifiers[variability]
     suffix = ctype.is_array? "[]" : ""
-    return strip("$qualifier $(ctype.cname) $prefix$cname$suffix")
+    return strip("$qualifier $(ctype.cname) $prefix $cname$suffix")
+end
+
+function declare_alias(ctype, cname, variability=unbound, prefix="")
+    qualifier = qualifiers[variability]
+    prefix = ctype.is_array? "* $qualifier" : ""
+    return strip("$qualifier $(ctype.cname) $prefix $cname")
 end
 
 function get_ctype(T, ctx::EmitContext)
@@ -73,7 +86,7 @@ function new_ctype(T, ctx::EmitContext)
         celtype = get_ctype(eltype(T), ctx)
         return CType(celtype.cname, true, Dict())
     else
-        error("Unsupported type $T")
+        error("Unsupported type $T in $(ctx.loc_info)")
     end
 end
 
@@ -127,7 +140,7 @@ function indent(lines::AbstractArray)
 end
 
 function emit_ispc(obj::Any, ctx::EmitContext)
-    error("Unhandled object: $obj ($(typeof(obj))) $(sexpr(obj))")
+    error("Unhandled object $obj ($(typeof(obj))) in $(ctx.loc_info)")
 end
 
 function emit_ispc(obj::Void, ctx::EmitContext)
@@ -161,7 +174,7 @@ function emit_ispc(node::QuoteNode, ctx::EmitContext)
 end
 
 function emit_ispc(top::TopNode, ctx::EmitContext)
-    error("Unhandled: $(sexpr(top))")
+    error("Unhandled: $(sexpr(top)) in $(ctx.loc_info)")
 end
 
 function emit_ispc(ref::GlobalRef, ctx::EmitContext)
@@ -173,11 +186,11 @@ function emit_ispc(typ::DataType, ctx::EmitContext)
 end
 
 function emit_ispc(expr::Expr, ctx::EmitContext)
-    emit_ispc(Val{expr.head}, expr.args, ctx)
+    emit_ispc(Val{expr.head}, expr.args, with_loc_info(ctx, sexpr(expr)))
 end
 
 function emit_ispc(head::Any, args, ctx::EmitContext)
-    error("Unhandled expression $head $(sexpr(args))")
+    error("Unhandled expression $head $(sexpr(args)) in $(ctx.loc_info)")
 end
 
 function emit_ispc(head::Type{Val{:new}}, args, ctx::EmitContext)
@@ -230,12 +243,11 @@ function emit_ispc(head::Type{Val{:call}}, args, ctx::EmitContext)
     try
         return emit_func_call(func, f_args, ctx)
     catch e
-        println(STDERR, "Error translating function call to $func from $(sexpr(args))")
+        if isa(e, KeyError)
+            error("Error while translating $func in $(ctx.loc_info)")
+        end
         rethrow(e)
     end
-
-    # cargs = [emit_ispc(arg, ctx) for arg in f_args]
-    # return codegen_func(cargs...)
 end
 
 
@@ -280,7 +292,15 @@ end
 
 function indexed_array(ctx::EmitContext, array, I...)
     arr = emit_ispc(array, ctx)
-    sizes = ctx.sizes[array.name]
+    sizes = try
+        ctx.sizes[array.name]
+    catch e
+        if isa(e, KeyError)
+            error("Can't find array size for $(array.name) in $(ctx.sizes)")
+        else
+            rethrow(e)
+        end
+    end
     if length(I) == 1
         iexpr = :($(I[1]) - 1)
         idx = emit_ispc(iexpr, ctx)
@@ -288,14 +308,14 @@ function indexed_array(ctx::EmitContext, array, I...)
         indices = [:($i-1) for i in I]
         idx = emit_ispc(col_major_index(sizes, indices), ctx)
     else
-        error("There must be either one index or as many as dimensions")
+        error("There must be either one index or as many as dimensions (in $(ctx.loc_info))")
     end
     return "$arr[$idx]"
 end
 
 function emit_ispc(head::Type{Val{:return}}, args, ctx::EmitContext)
     if length(args) > 1
-        error("Multiple return values are not supported")
+        error("Multiple return values are not supported (in $(ctx.loc_info)")
     end
     if args[1] == nothing
         return """return;"""
@@ -387,7 +407,8 @@ function emit_ispc(head::Type{Val{:foreach}}, args, ctx::EmitContext)
     body_ctx = nested_contex(ctx, unbound)
     body = indent(emit_ispc(block, body_ctx))
 
-    if length(targets) == 1 && targets[1].first == QuoteNode(:active)
+    active_exprs = (:active, QuoteNode(:active), Expr(:quote, :active))
+    if length(targets) == 1 && targets[1].first in active_exprs
         idx = ctx.cnames[targets[1].second]
         return """
         foreach_active($idx) {
@@ -409,7 +430,7 @@ function emit_ispc(head::Type{Val{:foreach}}, args, ctx::EmitContext)
             push!(iters, "$idx = $start ... ($stop+1)")
         else
             dump(object)
-            error("unsupported iteration object: $object")
+            error("unsupported iteration object: $object (in $(ctx.loc_info)")
         end
     end
     return """
@@ -429,12 +450,26 @@ function emit_ispc(head::Type{Val{:(=)}}, args, ctx::EmitContext)
     lhs, rhs = args
     rhs_code = emit_ispc(rhs, ctx)
 
+    if isa(lhs, Symbol) && isa(rhs, SymbolNode)
+        # Alias any array sizes:
+        try
+            ctx.sizes[lhs] = ctx.sizes[rhs.name]
+        catch
+        end
+    end
+
     cname = ctx.cnames[lhs]
     declared = lhs in ctx.declared
     if !declared
         push!(ctx.declared, lhs)
         ctype = get_ctype(ctx.var_types[lhs], ctx)
-        decl = declare(ctype, cname, ctx.variability)
+        if ctype.is_array
+            # all arrays are currently uniform
+            # TODO get variability from type
+            decl = declare_alias(ctype, cname, uniform)
+        else
+            decl = declare(ctype, cname, ctx.variability)
+        end
         return "$decl = $rhs_code;"
     else
         return "$cname = $rhs_code;"
@@ -496,12 +531,13 @@ function to_ispc(ast, ctx::EmitContext)
 
     # Emit ISPC code:
 
-#    code = try
-    code = emit_ispc(ast, ctx)
-#    catch e
-#       println(STDERR, ast)
-#       rethrow(e)
-#    end
+    # code = try
+        code = emit_ispc(ast, ctx)
+    # catch e
+    #    println(STDERR, ctx.var_types)
+    #    print_statements(STDERR, statements)
+    #    rethrow(e)
+    # end
     return code
 end
 
@@ -549,7 +585,7 @@ function ispc_codegen!(func::ISPCFunction)
     declared = Set(argnames)
     ctx = EmitContext(header, func.var_types, func.modified,
                         func.file.global_names, cnames, sizes,
-                        declared, Dict(), uniform)
+                        declared, Dict(), uniform, "")
 
     body = indent(to_ispc(func.ast, ctx))
 

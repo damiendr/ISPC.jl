@@ -2,19 +2,20 @@
 using Base.Meta
 
 """
-Finds ISPC kernels in `func_lowered`, extracts them, and
+Finds ISPC kernels in `func`, extracts them, and
 replaces them with calls to the compiled ISPC functions.
 """
-function make_ispc_main(func_lowered::Expr)
-    substitute(func_lowered) do expr
+function make_ispc_main(func::Expr)
+    substitute(func) do expr
         if isa(expr, Expr) && expr.head == :call
             func = expr.args[1]
             if func == GlobalRef(ISPC, :ispc_kernel)
                 identifier, lambda, options = expr.args[2:end]
 
-                arg_names = lambda.ast.args[1]
-                captured = lambda.ast.args[2][2]
-                body = lambda.ast.args[3]
+                ast = get_ast(lambda)
+                arg_names = ast.args[1]
+                captured = ast.args[2][2]
+                body = ast.args[3]
 
                 # Find out which arguments are modified by the
                 # kernel call:
@@ -31,7 +32,7 @@ function make_ispc_main(func_lowered::Expr)
 
                 println("Extracted kernel $identifier($((kernel_argnames...)))")
                 println("Modified arguments: $((modified...))")
-                println(strip_lineno(body))
+                # println(strip_lineno(body))
 
                 # identifier is a Val{symbol}, unbox the symbol:
                 id = identifier.parameters[1]
@@ -53,7 +54,6 @@ function make_ispc_main(func_lowered::Expr)
                         $(modified...) = $kernel_call
                     )
                 end
-
             end
         end
         nothing # not matched, don't substitute
