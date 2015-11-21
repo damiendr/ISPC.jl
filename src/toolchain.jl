@@ -32,7 +32,7 @@ end
     gpp == "" && error("libtool or g++ is required")
     println("Linker: $gpp")
     link(objfile, libfile) = run(
-        `$gpp -shared -undefined suppress -Wl,-export-dynamic "$objfile" -o "$libfile"`)
+        `$gpp -shared -Wl,-export-dynamic "$objfile" -o "$libfile"`)
 end
 
 """
