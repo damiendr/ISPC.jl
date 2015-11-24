@@ -83,7 +83,7 @@ end
 
     # Register the new kernel:
     argexprs = [:(args[$i]) for i in 1:length(args)]
-    func_call, func_idx = register_ispc_fragment!(argexprs,
+    func_call, func_idx = register_ispc_fragment!(id, argexprs,
                                             modified, typed_ast, opts)
 
     # Generate the main body:
@@ -168,7 +168,7 @@ function compile_all()
 end
 
 
-function register_ispc_fragment!(call_args, modified, ast::Expr, opts::Cmd)
+function register_ispc_fragment!(id, call_args, modified, ast::Expr, opts::Cmd)
 
     ast_args = ast.args[1]
     ast_body = ast.args[3]
@@ -254,7 +254,7 @@ function register_ispc_fragment!(call_args, modified, ast::Expr, opts::Cmd)
                         ast_body, "", "", file)
 
     # Generate the kernel's ISPC code:
-    ispc_codegen!(func)
+    ispc_codegen!(func, "kernel_$id")
     @assert func.ispc_name != ""
     @assert func.ispc_code != ""
 

@@ -559,7 +559,7 @@ function gen_ispc_func(ctx::EmitContext, name, ret_type, body, arg_types, arg_sy
 end
 
 
-function ispc_codegen!(func::ISPCFunction)
+function ispc_codegen!(func::ISPCFunction, kernel_name)
     sizes = Dict()
     argtypes = []
     argnames = []
@@ -581,6 +581,9 @@ function ispc_codegen!(func::ISPCFunction)
     cnames = substitute_identifiers(keys(func.var_types),
                                     globals=func.file.global_names)
 
+    substitute_identifiers([kernel_name], cnames,
+                                    globals=func.file.global_names)
+
     header = []
     declared = Set(argnames)
     ctx = EmitContext(header, func.var_types, func.modified,
@@ -594,7 +597,7 @@ function ispc_codegen!(func::ISPCFunction)
         write(io, decl)
         write(io, "\n")
     end
-    func.ispc_name = "ispc_func_$(func.idx)"
+    func.ispc_name = cnames[kernel_name]
     func_code = gen_ispc_func(ctx, func.ispc_name, Void, body,
                                    argtypes, argnames...)
     write(io, func_code)

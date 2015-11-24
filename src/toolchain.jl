@@ -23,8 +23,7 @@ end
 @osx_only begin
     libtool = "/usr/bin/libtool"
     println("Linker: $libtool")
-    link(objfile, libfile) = run(
-        `$libtool -dynamic -o "$libfile" "$objfile"`)
+    link(objfile, libfile) = run(`$libtool -dynamic -o "$libfile" "$objfile"`)
 end
 
 @linux_only begin
@@ -33,6 +32,10 @@ end
     println("Linker: $gpp")
     link(objfile, libfile) = run(
         `$gpp -shared -Wl,-export-dynamic "$objfile" -o "$libfile"`)
+end
+
+@windows_only begin
+    error("Not implemented: don't know how to create a shared lib on Windows")
 end
 
 """
