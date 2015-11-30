@@ -21,6 +21,16 @@ function openlibm_variants(pairs...)
     result
 end
 
+
+"""
+Helper to get around the extraneous checks that Julia performs
+when multiplying bools to floats.
+"""
+@noinline function case(test::Bool, a::Number)
+    Base.select_value(test, a, zero(a))
+end
+
+
 basefuncs = Dict(
 
     Base.FastMath.box => (typ, value) -> "$value",
@@ -41,6 +51,7 @@ basefuncs = Dict(
     Base.ceil => (value) -> "ceil($value)",
     Base.clamp => (val,min,max) -> "clamp($val,$min,$max)",
 
+    ISPC.case => (test, a) -> "((bool)$test * $a)",
     Core.Intrinsics.select_value => (test, a, b) -> "($test ? $a : $b)",
 
     (===) => (a, b) -> "($a == $b)",
