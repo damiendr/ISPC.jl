@@ -51,7 +51,7 @@ basefuncs = Dict(
     Base.ceil => (value) -> "ceil($value)",
     Base.clamp => (val,min,max) -> "clamp($val,$min,$max)",
 
-    ISPC.case => (test, a) -> "((bool)$test * $a)",
+    ISPC.case => (test, a) -> "((float)$test * $a)",
     Core.Intrinsics.select_value => (test, a, b) -> "($test ? $a : $b)",
 
     (===) => (a, b) -> "($a == $b)",
