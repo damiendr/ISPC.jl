@@ -127,7 +127,7 @@ macro ispc(fdef::Expr)
         #   body of the new @generated function.
 
         # First let's escape the name of the @generated block:
-        stagedname, stageddef = rename_fdef(func)x
+        stagedname, stageddef = rename_fdef(func)
         
         # Now build another @generated function to catch the argument types:
         funcspec = func.args[1]
