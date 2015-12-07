@@ -115,52 +115,32 @@ macro ispc(fdef::Expr)
     elseif func.head == :stagedfunction
         # That's a @generated function.
 
-        # This case is a bit harder to handle. We need to call the
-        # original @generated function in order to know the actual
-        # function body where we want to extract the kernels, and
-        # to do that we need to know the argument types.
+        # This case is a bit harder to handle. At the moment we don't
+        # know how to properly extract the type-inferred AST from a
+        # staged function without actually declaring it.
 
-        # So we'll have to declare the original @generated function, 
-        # declare a new @generated function to catch argument types,
-        # obtain the actual body from the original function, and run
-        # the extraction routine in the new @generated function.
+        # So we'll have to do the following:
+        # - declare the original @generated function under a new name, 
+        # - declare a new @generated function to catch argument types,
+        # - obtain the type-inferred body from the original function,
+        # - run the extraction routine and return the result as the
+        #   body of the new @generated function.
 
         # First let's escape the name of the @generated block:
-        stagedname, stageddef = rename_fdef(func)
+        stagedname, stageddef = rename_fdef(func)x
         
         # Now build another @generated function to catch the argument types:
         funcspec = func.args[1]
         argspec = func.args[1].args[2:end]
         argnames = map(get_argname, argspec)
-        
         ispcbody = quote
-            # println($stagedname)
-            # println(methods($stagedname))
-            # m = methods($stagedname).defs
-            # println(m)
-            # println(methods($stagedname).defs.func)
-            # println(methods($stagedname).defs.func.env)
-            # sleep(0.5)
-            # ISPC.print_lambda(methods($stagedname).defs.func.code.ast)
-            # sleep(0.5)
-
+            # Run type inference on the original function with the actual
+            # argument types:
             flowered = code_typed($stagedname, Tuple{$(argnames...)})
             body = flowered[1]
 
-            # # Get the @generated body for the argument types we have:
-            # body = methods($stagedname).defs.func($(argnames...))
-            # println(body)
-            
-            # # Create a plain function with the same signature and the
-            # # body we just got, otherwise the code won't be lowered 
-            # # right because the arguments aren't there:
-            # funcspec = $(Expr(:quote, funcspec))
-            
-            # # Run it through make_ispc_main():
-            # func = Expr(:function, funcspec, body)
-            # println(func)
+            # Extract kernels:
             ispcmain = ISPC.make_ispc_main(body)
-            # println(ispcmain)
 
             # Return the *body* of the transformed function:
             body = ispcmain.args[3]
@@ -168,9 +148,11 @@ macro ispc(fdef::Expr)
                 $(body.args...) # splatting avoids "misplaced return" error
             end
         end
+        # Our new @generated function is ready:
         ispcfunc = Expr(:stagedfunction, funcspec, ispcbody)
-        # The @ispc macro returns both the original, escaped @generated function
-        # and the ispc @generated function:
+
+        # The @ispc macro returns both the original, renamed @generated function
+        # and the new ispc @generated function:
         esc(quote
             import ISPC
             $stageddef

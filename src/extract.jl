@@ -31,7 +31,7 @@ function make_ispc_main(func::Expr)
                 end
 
                 println("Extracted kernel $identifier$((kernel_argnames...)) -- modified: $((modified...))")
-                # println(strip_lineno(body))
+                println(strip_lineno(body))
 
                 # identifier is a Val{symbol}, unbox the symbol:
                 id = identifier.parameters[1]
