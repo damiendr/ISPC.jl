@@ -118,8 +118,9 @@ ccall(fptr, Void, (Ref{Float32}, Ref{Float32}, UInt64), vin, vout, length(vout))
 ## How it works
 
 1. The `@kernel` macro creates a lambda function containing the kernel code.
-2. `code_lowered` is run on the main `@ispc` function to get information about
-   closure variables captured by the kernel lambda. These become kernel arguments.
+2. `code_lowered()` or `code_typed()` is run on the main `@ispc` function to get
+   information about closure variables captured by the kernel lambda. These become
+   kernel arguments.
 3. Kernel fragments in the main function are replaced by calls to a `@generated`
    `kernel_call` function.
 4. When `kernel_call` is called for the first time, type inference is run on the
