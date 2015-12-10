@@ -79,16 +79,17 @@ Not all of Julia's syntax and types are supported:
   index (linear indexing) or one index per dimension (multi-dimensional
   arrays). Indexing must yield an array element, not a sub-array.
 
-- all outer variables ("kernel arguments") must be primitive types
-  or arrays of primitive types. Simple composite types like `UnitRange`
-  are supported inside kernels (eg. in `for` loops) but not as kernel
-  arguments at the moment.
+- All outer variables ("kernel arguments") must be primitive types
+  or arrays of primitive types.
+
+- Simple composite types like `UnitRange` are supported inside kernels
+  (eg. in `for` loops) but not as kernel arguments at the moment.
 
 - Only functions that have a direct translation to ISPC are supported 
   inside kernels. User-defined functions may be used if they are declared
   `@inline`. This restriction may be lifted in the future.
 
-- Inner functions, exceptions, tasks, I/O etc. are not supported.
+- Inner functions, exceptions, task switching, I/O etc. are not supported.
 
 ISPC task-level constructs are not yet supported.
 
