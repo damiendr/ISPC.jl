@@ -2,7 +2,13 @@
 
 [![Build Status](https://travis-ci.org/damiendr/ISPC.jl.svg?branch=master)](https://travis-ci.org/damiendr/ISPC.jl)
 
-Tools & etc. to work with [Intel ISPC](http://ispc.github.io) from Julia.
+A library to work with [Intel ISPC](http://ispc.github.io) from Julia.
+
+ISPC.jl compiles fragments of ISPC-C or Julia code to vector code
+(eg. SSE/AVX on Intel CPUs) at runtime. It is similar to the `@simd`
+macro in Julia but supports control statements and a number of math functions.
+
+Speedups of 2x-8x compared to plain Julia code can be achieved (single core).
 
 ## Requirements
 
