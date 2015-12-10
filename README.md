@@ -72,6 +72,7 @@ Supported ISPC constructs:
 
 ### Limitations
 
+The high-level interface is meant to be used with numerical kernels only.
 Not all of Julia's syntax and types are supported:
 
 - Arrays can only be indexed with integers, providing either a single
@@ -86,6 +87,8 @@ Not all of Julia's syntax and types are supported:
 - Only functions that have a direct translation to ISPC are supported 
   inside kernels. User-defined functions may be used if they are declared
   `@inline`. This restriction may be lifted in the future.
+
+- Inner functions, exceptions, tasks, I/O etc. are not supported.
 
 ISPC task-level constructs are not yet supported.
 
