@@ -9,6 +9,9 @@ number of math functions.
 
 Speedups of 2x-8x compared to plain Julia code can be achieved (single core).
 
+- high-level interface: translates Julia to ISPC
+- low-level interface: compiles and loads ISPC programs
+
 ## Requirements
 
 - Julia 0.4 or 0.5-dev
