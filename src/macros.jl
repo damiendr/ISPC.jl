@@ -174,7 +174,7 @@ macro ispc(fdef::Expr)
         esc(quote
             import ISPC
             $stageddef
-            $ispcfunc;
+            @Base.__doc__($ispcfunc)
         end)
     end
 end

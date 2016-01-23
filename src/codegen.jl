@@ -148,6 +148,11 @@ function emit_ispc(obj::Void, ctx::EmitContext)
 end
 
 function emit_ispc(num::Real, ctx::EmitContext)
+    if num == Inf32
+        return "floatbits(0x7F800000)"
+    elseif num == -Inf32
+        return "floatbits(0xFF800000)"
+    end
     # Use hexadecimal float literals so that we
     # can represent the number exactly:
     return @sprintf("%a",num)
