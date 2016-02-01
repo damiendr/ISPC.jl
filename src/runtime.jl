@@ -131,8 +131,8 @@ function compile!(file)
     funcs = [ispc_funcs[idx] for idx in file.func_ids]
     ispc_code = gen_code(funcs...)
 
-    println("Compiling ISPC file, compile options: ", file.compile_opts)
-    println(ispc_code)
+#    println("Compiling ISPC file, compile options: ", file.compile_opts)
+#    println(ispc_code)
 
     file.compiled = true
     try
