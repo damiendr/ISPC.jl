@@ -14,6 +14,8 @@ Speedups of 2x-8x compared to plain Julia code can be achieved (single core).
 
 ## Requirements
 
+*Note: this package does not yet work with the latest Julia HEAD -- needs to be adapted to [some recent changes](https://github.com/JuliaLang/julia/pull/13412) first*
+
 - Julia 0.4 or 0.5-dev
 - `ispc` (must be found in $PATH)
 - `libtool` or `g++` (must be found in $PATH)
