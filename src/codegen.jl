@@ -206,7 +206,7 @@ function emit_ispc(head::Type{Val{:new}}, args, ctx::EmitContext)
 end
 
 function emit_ispc(head::Type{Val{:block}}, args, ctx::EmitContext)
-    body = join([emit_ispc(arg, ctx) for arg in args], "\n")
+    body = join([emit_ispc(arg, ctx) for arg in args], ";\n")
     return body
     # Remember: :block does not introduce a nested scope, so it's not
     # equivalent to curly brackets in C.
@@ -245,14 +245,14 @@ function emit_ispc(head::Type{Val{:call}}, args, ctx::EmitContext)
         func = eval(f_expr)
     end
 
-    try
+#    try
         return emit_func_call(func, f_args, ctx)
-    catch e
-        if isa(e, KeyError)
-            error("Error while translating $func in $(ctx.loc_info)")
-        end
-        rethrow(e)
-    end
+#    catch e
+#        if isa(e, KeyError)
+#            error("Error while translating $func in $(ctx.loc_info)")
+#        end
+#        rethrow(e)
+#    end
 end
 
 

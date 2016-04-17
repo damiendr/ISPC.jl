@@ -85,7 +85,8 @@ function load_ispc(code, options=``)
     if _keep_files
         load(mktempdir())
     else
-        mktempdir(load)
+        load(mktempdir())
+#        mktempdir(load)
         # Note: the temp dir and library files will be deleted now.
         # That's OK because the library is already loaded.
     end

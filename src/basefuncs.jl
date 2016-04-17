@@ -15,8 +15,8 @@ end
 function openlibm_variants(pairs...)
     result = []
     for (func_name, func_def) in pairs
-        push!(result, ("$(func_name)", "libopenlibm") => func_def)
-        push!(result, ("$(func_name)f", "libopenlibm") => func_def)
+        push!(result, (Symbol("$(func_name)"), "libopenlibm") => func_def)
+        push!(result, (Symbol("$(func_name)f"), "libopenlibm") => func_def)
     end
     result
 end
@@ -99,9 +99,14 @@ basefuncs = Dict(
         "Base.mul_float" => (a,b) -> "($a * $b)",
         "Base.div_float" => (a,b) -> "($a / $b)",
 
+        "Base.powi_llvm" => (a,b) -> "pow($a, $b)",
+        "Base.floor_llvm" => (a) -> "floor($a)",
         "Base.sqrt_llvm" => (a) -> "sqrt($a)",
         "Base.sqrt" => (a) -> "sqrt($a)",
         "Base.inv" => (a) -> "rcp($a)",
+
+        "Base.nan_dom_err" => (a, b) -> "$a",
+
     )...,
 
     openlibm_variants(

@@ -11,7 +11,7 @@ function make_ispc_main(func::Expr)
             func = expr.args[1]
             if func == GlobalRef(ISPC, :ispc_kernel)
                 identifier, lambda, options = expr.args[2:end]
-
+                
                 ast = get_ast(lambda)
                 arg_names = ast.args[1]
                 captured = ast.args[2][2]
