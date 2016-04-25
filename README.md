@@ -2,6 +2,8 @@
 
 [![Build Status](https://travis-ci.org/damiendr/ISPC.jl.svg?branch=master)](https://travis-ci.org/damiendr/ISPC.jl)
 
+**Note: [recent changes](https://github.com/JuliaLang/julia/pull/13412) in the way Julia represents functions and closures require a redesign of this package, which will be published when the 0.5 IR stabilises a bit more.**
+
 ISPC.jl uses the [Intel ISPC compiler](http://ispc.github.io) to compile fragments
 of ISPC-C or Julia code to vector code (eg. SSE/AVX on Intel CPUs) at runtime.
 It is similar to the standard `@simd` macro but supports control statements and a
@@ -14,9 +16,7 @@ Speedups of 2x-8x compared to plain Julia code can be achieved (single core).
 
 ## Requirements
 
-*Note: this package does not yet work with the latest Julia HEAD -- needs to be adapted to [some recent changes](https://github.com/JuliaLang/julia/pull/13412) first*
-
-- Julia 0.4 or 0.5-dev
+- Julia 0.4 or 0.5-dev up to [cf93d6f (2016-01-29 02:19 UTC)](https://github.com/JuliaLang/julia/commit/cf93d6fa9544995f1c402734894e99397167bf50)
 - `ispc` (must be found in $PATH)
 - `libtool` or `g++` (must be found in $PATH)
 - (optional) `llvm_dis` for looking at ISPC llvm assembly.
