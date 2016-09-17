@@ -53,7 +53,7 @@ translated_funcs = []
 # Wrapper with lazy compilation
 @generated function translated_call(f::Function, args...)
     push!(julia_funcs, (f, args))
-    idx = length(funcs)
+    idx = length(julia_funcs)
     quote
         ensure_all_compiled()
         translated_funcs[$idx](f, args...)
