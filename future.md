@@ -89,10 +89,10 @@ end
 
 ## Function-level translation
 
-With the new function types, function-level translation becomes just a special case of callsite translation where a @generated wrapper calls the original function.
+With the new function types, function-level translation becomes just a special case of callsite translation where a wrapper calls the original function.
 
 ```julia
-macro @translated(func)
+macro translated(func)
     orig_func = rename(func)
     wrapper = gen_wrapper(func, orig_func)
     quote
